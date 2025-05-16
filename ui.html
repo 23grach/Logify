@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Changelog</title>
+  <title>Design System Tracker</title>
   <style>
     body {
       font-family: 'Inter', sans-serif;
@@ -25,8 +25,8 @@
     .container {
       display: flex;
       flex-direction: column;
-      padding: 24px 8px 8px;
-      gap: 32px;
+      padding: 24px 16px;
+      gap: 24px;
       width: 100%;
       height: 100%;
       justify-content: space-between;
@@ -36,9 +36,22 @@
       display: flex;
       flex-direction: column;
       gap: 24px;
-      padding: 0px 0px 0px 16px;
       flex: 1;
       overflow-y: auto;
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: 600;
+      margin: 0;
+      padding: 0;
+    }
+
+    .subtitle {
+      font-size: 18px;
+      font-weight: 500;
+      margin: 0;
+      padding: 0;
     }
 
     .section {
@@ -50,15 +63,8 @@
     .section-header {
       font-size: 18px;
       font-weight: 600;
-      line-height: 1.33em;
       margin: 0;
-    }
-
-    .latest-change {
-      font-size: 24px;
-      font-weight: 600;
-      line-height: 1.33em;
-      margin: 0;
+      padding: 0;
     }
 
     .items-container {
@@ -71,427 +77,496 @@
     .item {
       display: flex;
       gap: 8px;
+      align-items: center;
+      font-size: 14px;
+      line-height: 1.5;
     }
 
-    .item-type, .item-name {
-      font-size: 14px;
+    .item-type {
+      font-weight: 500;
+      color: #666666;
+    }
+
+    .item-name {
       font-weight: 400;
-      line-height: 1.25em;
     }
 
     .actions-container {
       display: flex;
       flex-direction: column;
       width: 100%;
-      gap: 4px;
-      margin-top: auto;
+      gap: 8px;
     }
 
     .button {
       display: flex;
       justify-content: center;
       align-items: center;
-      gap: 4px;
-      padding: 14px;
+      gap: 8px;
+      padding: 12px;
       border: none;
-      border-radius: 12px;
+      border-radius: 6px;
       font-family: 'Inter', sans-serif;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 500;
-      line-height: 1.125em;
       cursor: pointer;
+      transition: background-color 0.2s ease;
     }
 
     .button-primary {
-      background-color: #0BA5EC;
+      background-color: #0D99FF;
       color: white;
     }
 
+    .button-primary:hover {
+      background-color: #0A85E9;
+    }
+
     .button-secondary {
-      background-color: #F5F5F5;
-      color: black;
+      background-color: #F0F0F0;
+      color: #333333;
     }
 
-    .button svg {
-      width: 16px;
-      height: 16px;
+    .button-secondary:hover {
+      background-color: #E0E0E0;
     }
 
-    .no-items {
-      font-size: 14px;
-      color: #000000;
-      line-height: 1.4285714285714286em;
-    }
-
-    .loading {
-      text-align: center;
-      padding: 32px 0;
-      color: #666666;
-    }
-
-    .welcome-text {
-      font-size: 14px;
-      font-weight: 400;
-      line-height: 1.4285714285714286em;
-      color: #000000;
-      white-space: pre-line;
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .element-count {
       font-size: 14px;
-      font-weight: 500;
-      color: #0BA5EC;
+      color: #666666;
       margin-top: 8px;
+    }
+
+    .center-message {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      height: 100%;
+      gap: 16px;
+      padding: 24px;
+    }
+
+    .message-text {
+      font-size: 16px;
+      color: #666666;
+      max-width: 300px;
+      line-height: 1.5;
+    }
+
+    .loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #F0F0F0;
+      border-top: 3px solid #0D99FF;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .divider {
+      height: 1px;
+      background-color: #E0E0E0;
+      margin: 8px 0;
+      width: 100%;
+    }
+    
+    .no-changes {
+      font-size: 14px;
+      color: #666666;
+      font-style: italic;
+      padding: 16px 0;
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-left: 8px;
+    }
+    
+    .badge-added {
+      background-color: #E7F5EA;
+      color: #2E7D32;
+    }
+    
+    .badge-changed {
+      background-color: #FFF8E1;
+      color: #F57C00;
+    }
+    
+    .badge-removed {
+      background-color: #FFEBEE;
+      color: #C62828;
     }
   </style>
 </head>
 <body>
   <div class="container" id="app">
     <!-- Content will be injected by JavaScript -->
-    <div class="loading">Loading...</div>
+    <div class="center-message">
+      <div class="loading-spinner"></div>
+      <div class="message-text">Loading...</div>
+    </div>
   </div>
 
   <script>
-    // Format date to YYYY-MM-DD
+    // Format date to a readable string
     function formatDate(timestamp) {
       const date = new Date(timestamp);
-      return date.toLocaleDateString('en-US', {
+      return date.toLocaleString('en-US', {
         year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2');
-    }
-
-    // Format time to HH:MM
-    function formatTime(timestamp) {
-      const date = new Date(timestamp);
-      return date.toLocaleTimeString('en-US', {
+        month: 'short',
+        day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
+        minute: '2-digit'
       });
     }
 
-    // Format library item type for display
-    function formatItemType(type) {
-      if (type === 'component') {
-        return 'Component';
-      } else if (type === 'componentSet') {
-        return 'Component Set';
-      } else if (type === 'variableCollection') {
-        return 'Variable Collection';
-      } else if (type === 'variable') {
-        return 'Variable';
-      } else if (type.startsWith('style:')) {
-        const styleType = type.replace('style:', '');
-        switch (styleType) {
-          case 'text':
-            return 'Text Style';
-          case 'paint':
-            return 'Color Style';
-          case 'grid':
-            return 'Grid Style';
-          case 'effect':
-            return 'Effect Style';
-          default:
-            return styleType.charAt(0).toUpperCase() + styleType.slice(1) + ' Style';
-        }
+    // Format element type for display
+    function formatElementType(type) {
+      switch (type) {
+        case 'component':
+          return 'Component';
+        case 'componentSet':
+          return 'Component Set';
+        case 'textStyle':
+          return 'Text Style';
+        case 'colorStyle':
+          return 'Color Style';
+        case 'effectStyle':
+          return 'Effect Style';
+        case 'gridStyle':
+          return 'Grid Style';
+        case 'variableCollection':
+          return 'Variable Collection';
+        case 'variable':
+          return 'Variable';
+        default:
+          return type.charAt(0).toUpperCase() + type.slice(1);
       }
-      
-      // Return a capitalized version of the type as a fallback
-      return type.charAt(0).toUpperCase() + type.slice(1);
     }
-
-    // Render the main changelog content
-    function renderChangelog(data, settings, changelogUpdated, hasPendingChanges) {
-      const { timestamp, added, removed, modified } = data;
+    
+    // Render initialization screen
+    function renderInitScreen() {
+      return `
+        <div class="content-container">
+          <div class="section">
+            <h1 class="title">Initialize System</h1>
+            <p class="message-text">
+              This plugin tracks changes to design system elements like components, styles, and variables. 
+              No tracking data exists yet. Click "Initialize System" to start tracking these elements.
+            </p>
+          </div>
+        </div>
+        <div class="actions-container">
+          <button class="button button-primary" id="initialize-button">Initialize System</button>
+        </div>
+      `;
+    }
+    
+    // Render initialization complete screen
+    function renderInitializedScreen(count) {
+      return `
+        <div class="content-container">
+          <div class="section">
+            <h1 class="title">Initialization Complete</h1>
+            <p class="message-text">
+              Successfully recorded ${count} design system elements. 
+              Any future changes to these elements will be tracked.
+            </p>
+            <p class="element-count">Elements recorded: ${count}</p>
+          </div>
+        </div>
+        <div class="actions-container">
+          <button class="button button-primary" id="view-records-button">View Records</button>
+          <button class="button button-secondary" id="ok-button">OK</button>
+        </div>
+      `;
+    }
+    
+    // Render records view screen
+    function renderRecordsScreen(elements, timestamp) {
       const date = formatDate(timestamp);
-      const time = formatTime(timestamp);
-
-      const hasChanges = added.length > 0 || removed.length > 0 || modified.length > 0;
-
-      return `
-        <div class="content-container">
-          <div class="section">
-            <h1 class="latest-change">Latest Change</h1>
-          </div>
-
-          ${added.length > 0 ? `
-            <div class="section">
-              <h2 class="section-header">Added (${added.length})</h2>
-              <div class="items-container">
-                ${added.map(item => `
-                  <div class="item">
-                    <div class="item-type">${formatItemType(item.type)}</div>
-                    <div class="item-name">${item.name}</div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-
-          ${removed.length > 0 ? `
-            <div class="section">
-              <h2 class="section-header">Removed (${removed.length})</h2>
-              <div class="items-container">
-                ${removed.map(item => `
-                  <div class="item">
-                    <div class="item-type">${formatItemType(item.type)}</div>
-                    <div class="item-name">${item.name}</div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-
-          ${modified.length > 0 ? `
-            <div class="section">
-              <h2 class="section-header">Modified (${modified.length})</h2>
-              <div class="items-container">
-                ${modified.map(item => {
-                  const prevItem = item;
-                  return `
-                    <div class="item">
-                      <div class="item-type">${formatItemType(item.type)}</div>
-                      <div class="item-name">${prevItem.name !== item.name ? 
-                        `${prevItem.name} → ${item.name}` : 
-                        `${item.name}`}</div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            </div>
-          ` : ''}
-
-          ${!hasChanges && !hasPendingChanges ? `
-            <div class="section">
-              <div class="no-items">No changes detected since the last run.</div>
-            </div>
-          ` : ''}
-        </div>
-
-        <div class="actions-container">
-          ${(hasChanges || hasPendingChanges) ? `
-            <button class="button button-primary" id="update-changelog-button">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11.8125 11.25C13.0551 11.25 14.0625 10.2426 14.0625 9C14.0625 7.75736 13.0551 6.75 11.8125 6.75C10.5699 6.75 9.5625 7.75736 9.5625 9C9.5625 10.2426 10.5699 11.25 11.8125 11.25Z" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M9.5625 6.75H11.8125C12.4092 6.75 12.9815 6.51295 13.4035 6.09099C13.8254 5.66903 14.0625 5.09674 14.0625 4.5C14.0625 3.90326 13.8254 3.33097 13.4035 2.90901C12.9815 2.48705 12.4092 2.25 11.8125 2.25H9.5625M9.5625 6.75H6.75M9.5625 6.75V2.25M9.5625 6.75V11.25M9.5625 2.25H6.75C6.15326 2.25 5.58097 2.48705 5.15901 2.90901C4.73705 3.33097 4.5 3.90326 4.5 4.5C4.5 5.09674 4.73705 5.66903 5.15901 6.09099C5.58097 6.51295 6.15326 6.75 6.75 6.75M6.75 6.75C6.15326 6.75 5.58097 6.98705 5.15901 7.40901C4.73705 7.83097 4.5 8.40326 4.5 9C4.5 9.59674 4.73705 10.169 5.15901 10.591C5.58097 11.0129 6.15326 11.25 6.75 11.25H9.5625M9.5625 11.25H7.03125C6.53062 11.25 6.04123 11.3985 5.62496 11.6766C5.2087 11.9547 4.88427 12.3501 4.69268 12.8126C4.5011 13.2751 4.45097 13.7841 4.54864 14.2751C4.64631 14.7661 4.88739 15.2171 5.24139 15.5711C5.59539 15.9251 6.04641 16.1662 6.53743 16.2639C7.02844 16.3615 7.53739 16.3114 7.99992 16.1198C8.46244 15.9282 8.85777 15.6038 9.13591 15.1875C9.41405 14.7713 9.5625 14.2819 9.5625 13.7812V11.25Z" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              Update Figma Page
-            </button>
-          ` : ''}
-          <button class="button button-secondary" id="refresh-button">
-              <svg width="19" height="18" viewBox="0 0 19 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <g clip-path="url(#clip0_4_139)">
-                  <path d="M2.1875 3.9375V7.3125H5.5625" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M5.25242 13.5C6.13686 14.3347 7.24767 14.8903 8.44605 15.0973C9.64443 15.3043 10.8772 15.1535 11.9905 14.6639C13.1037 14.1743 14.0479 13.3675 14.7052 12.3443C15.3625 11.3211 15.7037 10.1269 15.6861 8.91086C15.6686 7.69486 15.2931 6.51099 14.6066 5.50716C13.9201 4.50334 12.953 3.72408 11.8261 3.26674C10.6993 2.80941 9.46262 2.69429 8.27071 2.93576C7.07879 3.17723 5.98446 3.76459 5.12445 4.62444L2.1875 7.31249" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </g>
-                <defs>
-                  <clipPath id="clip0_4_139">
-                    <rect width="18" height="18" fill="white" transform="translate(0.5)"/>
-                  </clipPath>
-                </defs>
-              </svg>
-            Refresh Changelog
-          </button>
-          <button class="button button-secondary" id="reset-button">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M14.0625 3.9375L3.9375 14.0625" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M14.0625 14.0625L3.9375 3.9375" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Reset Library
-          </button>
-        </div>
-      `;
-    }
-
-    // Render the welcome screen based on the Figma design
-    function renderWelcomeScreen(count) {
-      return `
-        <div class="content-container">
-          <div class="section">
-            <h1 class="latest-change">Welcome to Changelog</h1>
-            <div class="welcome-text">Let's get started!
-Press "Sync Library" to set your first baseline.
-We'll track all changes from here.</div>
-            ${count ? `<div class="element-count">Successfully loaded ${count} elements</div>` : ''}
-          </div>
-        </div>
-        
-        <div class="actions-container">
-          <button class="button button-primary" id="refresh-button">
-            <svg width="19" height="18" viewBox="0 0 19 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <g clip-path="url(#clip0_4_139)">
-                <path d="M2.1875 3.9375V7.3125H5.5625" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M5.25242 13.5C6.13686 14.3347 7.24767 14.8903 8.44605 15.0973C9.64443 15.3043 10.8772 15.1535 11.9905 14.6639C13.1037 14.1743 14.0479 13.3675 14.7052 12.3443C15.3625 11.3211 15.7037 10.1269 15.6861 8.91086C15.6686 7.69486 15.2931 6.51099 14.6066 5.50716C13.9201 4.50334 12.953 3.72408 11.8261 3.26674C10.6993 2.80941 9.46262 2.69429 8.27071 2.93576C7.07879 3.17723 5.98446 3.76459 5.12445 4.62444L2.1875 7.31249" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </g>
-              <defs>
-                <clipPath id="clip0_4_139">
-                  <rect width="18" height="18" fill="white" transform="translate(0.5)"/>
-                </clipPath>
-              </defs>
-            </svg>
-            Sync Library
-          </button>
-        </div>
-      `;
-    }
-
-    // Render after reset complete
-    function renderAfterReset() {
-      return `
-        <div class="content-container">
-          <div class="section">
-            <h1 class="latest-change">Welcome to Changelog</h1>
-            <div class="welcome-text">Let's get started!
-Press "Sync Library" to set your first baseline.
-We'll track all changes from here.</div>
-          </div>
-        </div>
-        
-        <div class="actions-container">
-          <button class="button button-primary" id="refresh-button">
-            <svg width="19" height="18" viewBox="0 0 19 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <g clip-path="url(#clip0_4_139)">
-                <path d="M2.1875 3.9375V7.3125H5.5625" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M5.25242 13.5C6.13686 14.3347 7.24767 14.8903 8.44605 15.0973C9.64443 15.3043 10.8772 15.1535 11.9905 14.6639C13.1037 14.1743 14.0479 13.3675 14.7052 12.3443C15.3625 11.3211 15.7037 10.1269 15.6861 8.91086C15.6686 7.69486 15.2931 6.51099 14.6066 5.50716C13.9201 4.50334 12.953 3.72408 11.8261 3.26674C10.6993 2.80941 9.46262 2.69429 8.27071 2.93576C7.07879 3.17723 5.98446 3.76459 5.12445 4.62444L2.1875 7.31249" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </g>
-              <defs>
-                <clipPath id="clip0_4_139">
-                  <rect width="18" height="18" fill="white" transform="translate(0.5)"/>
-                </clipPath>
-              </defs>
-            </svg>
-            Sync Library
-          </button>
-        </div>
-      `;
-    }
-
-    // Render error message
-    function renderError(message) {
-      // We'll now use native Figma notifications, so we'll just show a basic content
-      return `
-        <div class="content-container">
-          <div class="section">
-            <h1 class="latest-change">Something went wrong</h1>
-            <div class="no-items">There was an error loading the changelog data.</div>
-          </div>
-        </div>
-        
-        <div class="actions-container">
-          <button class="button button-secondary" id="refresh-button">
-            <svg width="19" height="18" viewBox="0 0 19 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <g clip-path="url(#clip0_4_139)">
-                <path d="M2.1875 3.9375V7.3125H5.5625" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M5.25242 13.5C6.13686 14.3347 7.24767 14.8903 8.44605 15.0973C9.64443 15.3043 10.8772 15.1535 11.9905 14.6639C13.1037 14.1743 14.0479 13.3675 14.7052 12.3443C15.3625 11.3211 15.7037 10.1269 15.6861 8.91086C15.6686 7.69486 15.2931 6.51099 14.6066 5.50716C13.9201 4.50334 12.953 3.72408 11.8261 3.26674C10.6993 2.80941 9.46262 2.69429 8.27071 2.93576C7.07879 3.17723 5.98446 3.76459 5.12445 4.62444L2.1875 7.31249" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </g>
-              <defs>
-                <clipPath id="clip0_4_139">
-                  <rect width="18" height="18" fill="white" transform="translate(0.5)"/>
-                </clipPath>
-              </defs>
-            </svg>
-            Refresh Library
-          </button>
-        </div>
-      `;
-    }
-
-    // Listen for messages from the plugin
-    window.onmessage = async (event) => {
-      const message = event.data.pluginMessage;
-      const appElement = document.getElementById('app');
-
-      if (message.type === 'loading') {
-        appElement.innerHTML = `<div class="loading">Loading library data...</div>`;
-      } else if (message.type === 'changelog') {
-        appElement.innerHTML = renderChangelog(
-          message.data, 
-          message.settings, 
-          message.changelogUpdated, 
-          message.hasPendingChanges
-        );
-        
-        // Send a notification if there are changes
-        if (message.data.added.length > 0 || message.data.removed.length > 0 || message.data.modified.length > 0) {
-          parent.postMessage({ 
-            pluginMessage: { 
-              type: 'notify', 
-              message: 'Changes detected. Click "Update Figma Page" to add them to the Figma file.'
-            } 
-          }, '*');
+      
+      // Group elements by type
+      const groupedElements = {};
+      elements.forEach(element => {
+        if (!groupedElements[element.type]) {
+          groupedElements[element.type] = [];
         }
+        groupedElements[element.type].push(element);
+      });
+      
+      // Generate HTML for each group
+      let elementsHtml = '';
+      Object.keys(groupedElements).sort().forEach(type => {
+        const items = groupedElements[type];
+        if (items.length > 0) {
+          elementsHtml += `
+            <div class="section">
+              <h2 class="section-header">${formatElementType(type)}s (${items.length})</h2>
+              <div class="items-container">
+                ${items.map(item => `
+                  <div class="item">
+                    <div class="item-name">${item.name}</div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }
+      });
+      
+      return `
+        <div class="content-container">
+          <div class="section">
+            <h1 class="title">Current Records</h1>
+            <p class="element-count">Last updated: ${date}</p>
+            <p class="element-count">Total elements: ${elements.length}</p>
+          </div>
+          <div class="divider"></div>
+          ${elementsHtml}
+        </div>
+        <div class="actions-container">
+          <button class="button button-secondary" id="back-button">Back</button>
+        </div>
+      `;
+    }
+    
+    // Render main screen with changes
+    function renderMainScreen(changes, timestamp, hasChanges) {
+      const date = formatDate(timestamp);
+      
+      return `
+        <div class="content-container">
+          <div class="section">
+            <h1 class="title">Design System Tracker</h1>
+            <p class="element-count">Last scanned: ${date}</p>
+          </div>
+          
+          ${hasChanges ? `
+            <div class="divider"></div>
+            
+            ${changes.added.length > 0 ? `
+              <div class="section">
+                <h2 class="section-header">Added <span class="badge badge-added">${changes.added.length}</span></h2>
+                <div class="items-container">
+                  ${changes.added.map(item => `
+                    <div class="item">
+                      <div class="item-type">${formatElementType(item.type)}</div>
+                      <div class="item-name">${item.name}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+            
+            ${changes.modified.length > 0 ? `
+              <div class="section">
+                <h2 class="section-header">Changed <span class="badge badge-changed">${changes.modified.length}</span></h2>
+                <div class="items-container">
+                  ${changes.modified.map(item => `
+                    <div class="item">
+                      <div class="item-type">${formatElementType(item.type)}</div>
+                      <div class="item-name">${item.name}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+            
+            ${changes.removed.length > 0 ? `
+              <div class="section">
+                <h2 class="section-header">Removed <span class="badge badge-removed">${changes.removed.length}</span></h2>
+                <div class="items-container">
+                  ${changes.removed.map(item => `
+                    <div class="item">
+                      <div class="item-type">${formatElementType(item.type)}</div>
+                      <div class="item-name">${item.name}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+          ` : `
+            <div class="section">
+              <div class="no-changes">No changes detected since last update</div>
+            </div>
+          `}
+        </div>
         
-        setupEventListeners();
-      } else if (message.type === 'firstRun') {
-        appElement.innerHTML = renderWelcomeScreen(message.count);
-        setupEventListeners();
-      } else if (message.type === 'error') {
-        appElement.innerHTML = renderError(message.message);
-        
-        // Send the error to the main plugin code for a native notification
-        parent.postMessage({ 
-          pluginMessage: { 
-            type: 'notify-error', 
-            message: message.message 
-          } 
-        }, '*');
-        
-        setupEventListeners();
-      } else if (message.type === 'settings-updated') {
-        // We don't need to do anything here as the UI will be updated with the next message
-      } else if (message.type === 'changelog-updated') {
-        // Send a notification to the main plugin code
-        parent.postMessage({ 
-          pluginMessage: { 
-            type: 'notify', 
-            message: message.message || 'Changelog updated successfully in Figma file.' 
-          } 
-        }, '*');
-      } else if (message.type === 'reset-complete') {
-        // Show the reset UI
-        appElement.innerHTML = renderAfterReset();
-        setupEventListeners();
-      } else if (message.type === 'notification') {
-        // Send a notification to the main plugin code
-        parent.postMessage({ 
-          pluginMessage: { 
-            type: message.error ? 'notify-error' : 'notify', 
-            message: message.message 
-          } 
-        }, '*');
-      }
-    };
-
+        <div class="actions-container">
+          <button class="button button-primary" id="add-to-figma-button" ${!hasChanges ? 'disabled' : ''}>Add to Figma</button>
+          <button class="button button-secondary" id="refresh-button">Refresh</button>
+          <button class="button button-secondary" id="view-records-button">View Records</button>
+        </div>
+      `;
+    }
+    
+    // Render loading screen
+    function renderLoadingScreen(message = 'Processing...') {
+      return `
+        <div class="center-message">
+          <div class="loading-spinner"></div>
+          <div class="message-text">${message}</div>
+        </div>
+      `;
+    }
+    
+    // Render error screen
+    function renderErrorScreen(message) {
+      return `
+        <div class="center-message">
+          <div class="message-text">Error: ${message}</div>
+          <button class="button button-secondary" id="refresh-button">Retry</button>
+        </div>
+      `;
+    }
+    
+    // Track the current changes data
+    let currentChanges = null;
+    
     // Set up event listeners for buttons
     function setupEventListeners() {
-      // Reset button
-      const resetButton = document.getElementById('reset-button');
-      if (resetButton) {
-        resetButton.addEventListener('click', () => {
-          if (confirm('Are you sure you want to reset the library? This will clear all baseline data.')) {
-            parent.postMessage({ pluginMessage: { type: 'reset-baseline' } }, '*');
-          }
+      // Initialize System button
+      const initializeButton = document.getElementById('initialize-button');
+      if (initializeButton) {
+        initializeButton.addEventListener('click', () => {
+          renderUI(renderLoadingScreen('Initializing system...'));
+          parent.postMessage({ pluginMessage: { type: 'initialize' } }, '*');
         });
       }
-
-      // Update changelog button
-      const updateChangelogButton = document.getElementById('update-changelog-button');
-      if (updateChangelogButton) {
-        updateChangelogButton.addEventListener('click', () => {
-          parent.postMessage({ pluginMessage: { type: 'update-changelog' } }, '*');
+      
+      // View Records button
+      const viewRecordsButton = document.getElementById('view-records-button');
+      if (viewRecordsButton) {
+        viewRecordsButton.addEventListener('click', () => {
+          renderUI(renderLoadingScreen('Loading records...'));
+          parent.postMessage({ pluginMessage: { type: 'viewRecords' } }, '*');
         });
       }
-
-      // Refresh/Sync library button
-      const refreshButton = document.getElementById('refresh-button');
-      if (refreshButton) {
-        refreshButton.addEventListener('click', () => {
+      
+      // OK button (from initialization complete)
+      const okButton = document.getElementById('ok-button');
+      if (okButton) {
+        okButton.addEventListener('click', () => {
+          renderUI(renderLoadingScreen('Scanning for changes...'));
           parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
         });
       }
+      
+      // Back button (from records view)
+      const backButton = document.getElementById('back-button');
+      if (backButton) {
+        backButton.addEventListener('click', () => {
+          renderUI(renderLoadingScreen('Scanning for changes...'));
+          parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+        });
+      }
+      
+      // Refresh button
+      const refreshButton = document.getElementById('refresh-button');
+      if (refreshButton) {
+        refreshButton.addEventListener('click', () => {
+          renderUI(renderLoadingScreen('Scanning for changes...'));
+          parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+        });
+      }
+      
+      // Add to Figma button
+      const addToFigmaButton = document.getElementById('add-to-figma-button');
+      if (addToFigmaButton) {
+        addToFigmaButton.addEventListener('click', () => {
+          if (currentChanges) {
+            renderUI(renderLoadingScreen('Adding to Figma...'));
+            parent.postMessage({ 
+              pluginMessage: { 
+                type: 'addToFigma',
+                changes: currentChanges
+              } 
+            }, '*');
+          }
+        });
+      }
     }
+    
+    // Helper to render UI and set up event listeners
+    function renderUI(html) {
+      const appElement = document.getElementById('app');
+      appElement.innerHTML = html;
+      setupEventListeners();
+    }
+
+    // Listen for messages from the plugin
+    window.onmessage = (event) => {
+      const message = event.data.pluginMessage;
+      
+      if (!message) return;
+      
+      switch (message.type) {
+        case 'init':
+          // Show initialization screen
+          renderUI(renderInitScreen());
+          break;
+          
+        case 'initialized':
+          // Show initialization complete screen
+          renderUI(renderInitializedScreen(message.count));
+          break;
+          
+        case 'scanComplete':
+          // Show main screen with no changes
+          currentChanges = { added: [], modified: [], removed: [] };
+          renderUI(renderMainScreen(currentChanges, Date.now(), false));
+          break;
+          
+        case 'changes':
+          // Show main screen with changes
+          currentChanges = message.changes;
+          renderUI(renderMainScreen(message.changes, message.timestamp, message.hasChanges));
+          break;
+          
+        case 'records':
+          // Show records screen
+          renderUI(renderRecordsScreen(message.elements, message.timestamp));
+          break;
+          
+        case 'addedToFigma':
+          // Show success and refresh
+          renderUI(renderLoadingScreen('Added to Figma. Refreshing...'));
+          setTimeout(() => {
+            parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+          }, 1000);
+          break;
+          
+        case 'updated':
+          // Show main screen after update
+          renderUI(renderLoadingScreen('Scanning for changes...'));
+          parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+          break;
+          
+        case 'error':
+          // Show error screen
+          renderUI(renderErrorScreen(message.message));
+          break;
+          
+        default:
+          console.log('Unknown message type:', message.type);
+      }
+    };
   </script>
 </body>
 </html> 

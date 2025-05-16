@@ -1,7 +1,7 @@
 {
-  "name": "changelog",
+  "name": "logify",
   "version": "1.0.0",
-  "description": "Displays changes made to a Figma design library after publishing",
+  "description": "Track, document, and visualize changes to your Figma design library with automated logging",
   "main": "code.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",

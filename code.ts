@@ -5,253 +5,149 @@
 // You can access browser APIs in the <script> tag inside "ui.html" which has a
 // full browser environment (See https://www.figma.com/plugin-docs/how-plugins-run).
 
-// This plugin shows changes in a Figma library since the last check
+// This plugin tracks changes to design system elements (components, styles, variables)
 
 // Define types for our plugin
-interface LibraryItem {
+interface DesignSystemElement {
   id: string;
   name: string;
   type: string;
   key?: string;
-  description?: string;
-  updatedAt?: string;
 }
 
-interface ChangelogData {
+interface TrackingData {
   timestamp: number;
-  added: LibraryItem[];
-  removed: LibraryItem[];
-  modified: LibraryItem[];
+  elements: DesignSystemElement[];
 }
 
-interface ChangelogEntry {
-  id: string; // Unique ID for this changelog entry
-  timestamp: number;
-  added: LibraryItem[];
-  removed: LibraryItem[];
-  modified: LibraryItem[];
-  syncedToFigma: boolean; // Whether this entry has been written to the Figma page
+interface Changes {
+  added: DesignSystemElement[];
+  modified: DesignSystemElement[];
+  removed: DesignSystemElement[];
 }
 
 interface PluginMessage {
   type: string;
-  insertPosition?: 'top' | 'bottom';
   [key: string]: any;
 }
 
-interface PluginSettings {
-  insertPosition: 'top' | 'bottom';
-}
-
-// Default settings
-const DEFAULT_SETTINGS: PluginSettings = {
-  insertPosition: 'top'
-};
-
-// Main plugin code
-async function main(): Promise<void> {
-  // Show UI with a loading indicator
+// Main entry point
   figma.showUI(__html__, { width: 400, height: 500 });
-  figma.ui.postMessage({ type: 'loading' });
 
+// Initialize plugin
+async function initializePlugin(): Promise<void> {
   try {
-    // Load settings
-    const settings = await loadSettings();
-
-    // Load all pages before accessing them
-    await figma.loadAllPagesAsync();
+    // Check if we have existing tracking data
+    const storedData = await figma.clientStorage.getAsync('trackingData') as TrackingData | null;
     
-    // Get components, styles, variables from the document
-    const localComponentSets = await getComponentSets();
-    const localComponents = await getComponents();
-    const localStyles = await getStyles();
-    const localVariables = await getVariableCollections();
-    
-    // Merge all items into one list
-    const currentLibraryItems = [
-      ...localComponentSets,
-      ...localComponents, 
-      ...localStyles,
-      ...localVariables
-    ];
-    
-    // Load previous state from clientStorage
-    const previousLibraryItems = await getPreviousState();
-    
-    // If this is the first run, save the current state and inform user
-    if (!previousLibraryItems || previousLibraryItems.length === 0) {
-      await saveCurrentState(currentLibraryItems);
-      figma.ui.postMessage({ 
-        type: 'firstRun',
-        count: currentLibraryItems.length,
-        timestamp: Date.now(),
-        settings: settings
-      });
-      return;
+    if (!storedData) {
+      // First time use - show initialization screen
+      figma.ui.postMessage({ type: 'init' });
+    } else {
+      // Compare current elements with stored elements
+      await scanAndCompare();
     }
-    
-    // Compare current state with previous state
-    const changelog = compareLibraryStates(previousLibraryItems, currentLibraryItems);
-    
-    // Check if there are any changes
-    const hasChanges = changelog.added.length > 0 || 
-                      changelog.removed.length > 0 || 
-                      changelog.modified.length > 0;
-    
-    if (hasChanges) {
-      // Store this changelog entry in pending entries
-      await addPendingChangelogEntry(changelog);
-    }
-    
-    // Check if any pending entries need to be written to the Figma page
-    const pendingEntries = await getPendingChangelogEntries();
-    const hasPendingChanges = pendingEntries.some(entry => !entry.syncedToFigma);
-    
-    // Send changelog data to the UI
-    figma.ui.postMessage({ 
-      type: 'changelog',
-      data: changelog,
-      settings: settings,
-      changelogUpdated: false, // Always false on initial load
-      hasPendingChanges: hasPendingChanges
-    });
-  } catch (error: any) {
-    console.error('Error:', error);
+  } catch (error) {
+    console.error('Error initializing plugin:', error);
     figma.ui.postMessage({ 
       type: 'error',
-      message: 'Failed to generate changelog: ' + error.message
+      message: 'Failed to initialize: ' + (error instanceof Error ? error.message : String(error))
     });
-    figma.notify('Failed to generate changelog: ' + error.message, { error: true });
   }
 }
 
-// Get component sets from the document
-async function getComponentSets(): Promise<LibraryItem[]> {
-  const componentSets: LibraryItem[] = [];
+// Collect all design system elements in the current file
+async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
+  const elements: DesignSystemElement[] = [];
   
-  // Iterate through all pages to find component sets
+  try {
+    // Get components
+    await figma.loadAllPagesAsync();
+    
+    // Process each page to find components
   for (const page of figma.root.children) {
-    try {
-      // Ensure the page is loaded
-      await page.loadAsync();
-
-      // Skip private pages in team libraries
+      // Skip private pages if needed
       if (page.getSharedPluginData('figma', 'private') === 'true') {
         continue;
       }
       
-      // Find component sets
-      page.findAllWithCriteria({ types: ['COMPONENT_SET'] })
-        .forEach((node) => {
-          componentSets.push({
-            id: node.id,
-            name: node.name,
-            type: 'componentSet',
-            key: node.key
-          });
+      // Find components and component sets
+      const components = page.findAllWithCriteria({ types: ['COMPONENT'] });
+      const componentSets = page.findAllWithCriteria({ types: ['COMPONENT_SET'] });
+      
+      // Add components to the list
+      for (const component of components) {
+        elements.push({
+          id: component.id,
+          name: component.name,
+          type: 'component',
+          key: component.key
         });
-    } catch (err) {
-      // Skip this page if it cannot be loaded
-      console.warn(`Could not process page: ${page.name}`, err);
-    }
-  }
-  
-  return componentSets;
-}
-
-// Get components from the document
-async function getComponents(): Promise<LibraryItem[]> {
-  const components: LibraryItem[] = [];
-  
-  // Iterate through all pages to find components
-  for (const page of figma.root.children) {
-    try {
-      // Ensure the page is loaded
-      await page.loadAsync();
-
-      // Skip private pages in team libraries
-      if (page.getSharedPluginData('figma', 'private') === 'true') {
-        continue;
       }
       
-      // Find components
-      page.findAllWithCriteria({ types: ['COMPONENT'] })
-        .forEach((node) => {
-          components.push({
-            id: node.id,
-            name: node.name,
-            type: 'component',
-            key: node.key
+      // Add component sets to the list
+      for (const componentSet of componentSets) {
+        elements.push({
+          id: componentSet.id,
+          name: componentSet.name,
+          type: 'componentSet',
+          key: componentSet.key
           });
-        });
-    } catch (err) {
-      // Skip this page if it cannot be loaded
-      console.warn(`Could not process page: ${page.name}`, err);
+      }
     }
-  }
-  
-  return components;
-}
-
-// Get styles from the document
-async function getStyles(): Promise<LibraryItem[]> {
-  const styles: LibraryItem[] = [];
-  
-  // Get text styles
-  const textStyles = await figma.getLocalTextStylesAsync();
+    
+    // Get styles
+    const textStyles = await figma.getLocalTextStylesAsync();
+    const colorStyles = await figma.getLocalPaintStylesAsync();
+    const effectStyles = await figma.getLocalEffectStylesAsync();
+    const gridStyles = await figma.getLocalGridStylesAsync();
+    
+    // Add text styles
   for (const style of textStyles) {
-    styles.push({
+      elements.push({
       id: style.id,
       name: style.name,
-      type: 'style:text',
+        type: 'textStyle',
       key: style.key
     });
   }
   
-  // Get paint styles
-  const paintStyles = await figma.getLocalPaintStylesAsync();
-  for (const style of paintStyles) {
-    styles.push({
+    // Add color styles
+    for (const style of colorStyles) {
+      elements.push({
       id: style.id,
       name: style.name,
-      type: 'style:paint',
+        type: 'colorStyle',
       key: style.key
     });
   }
   
-  // Get effect styles
-  const effectStyles = await figma.getLocalEffectStylesAsync();
+    // Add effect styles
   for (const style of effectStyles) {
-    styles.push({
+      elements.push({
       id: style.id,
       name: style.name,
-      type: 'style:effect',
+        type: 'effectStyle',
       key: style.key
     });
   }
   
-  // Get grid styles
-  const gridStyles = await figma.getLocalGridStylesAsync();
+    // Add grid styles
   for (const style of gridStyles) {
-    styles.push({
+      elements.push({
       id: style.id,
       name: style.name,
-      type: 'style:grid',
+        type: 'gridStyle',
       key: style.key
     });
   }
   
-  return styles;
-}
-
-// Get variable collections from the document
-async function getVariableCollections(): Promise<LibraryItem[]> {
-  const variableCollections: LibraryItem[] = [];
-  
+    // Get variables and collections
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    
+    // Add variable collections and their variables
   for (const collection of collections) {
-    // Add the collection itself
-    variableCollections.push({
+      elements.push({
       id: collection.id,
       name: collection.name,
       type: 'variableCollection'
@@ -262,7 +158,7 @@ async function getVariableCollections(): Promise<LibraryItem[]> {
     for (const id of variableIds) {
       const variable = await figma.variables.getVariableByIdAsync(id);
       if (variable) {
-        variableCollections.push({
+          elements.push({
           id: variable.id,
           name: variable.name,
           type: 'variable',
@@ -272,393 +168,337 @@ async function getVariableCollections(): Promise<LibraryItem[]> {
     }
   }
   
-  return variableCollections;
+    return elements;
+  } catch (error) {
+    console.error('Error collecting design system elements:', error);
+    throw error;
+  }
 }
 
-// Compare previous and current library states to find changes
-function compareLibraryStates(
-  previous: LibraryItem[], 
-  current: LibraryItem[]
-): ChangelogData {
+// Compare current elements with stored elements
+async function scanAndCompare(): Promise<void> {
+  try {
+    // Get current elements
+    const currentElements = await collectDesignSystemElements();
+    
+    // Get stored elements
+    const storedData = await figma.clientStorage.getAsync('trackingData') as TrackingData | null;
+    
+    if (!storedData) {
+      // No stored data - send total count message
+      figma.ui.postMessage({ 
+        type: 'scanComplete', 
+        count: currentElements.length,
+        hasChanges: false
+      });
+      return;
+    }
+    
+    // Compare current vs stored elements
+    const changes = compareElements(storedData.elements, currentElements);
+    
+    // Send results to UI
+    figma.ui.postMessage({
+      type: 'changes',
+      changes: changes,
+      timestamp: Date.now(),
+      hasChanges: changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0
+    });
+  } catch (error) {
+    console.error('Error scanning for changes:', error);
+    figma.ui.postMessage({
+      type: 'error',
+      message: 'Failed to scan for changes: ' + (error instanceof Error ? error.message : String(error))
+    });
+  }
+}
+
+// Compare two sets of elements
+function compareElements(previous: DesignSystemElement[], current: DesignSystemElement[]): Changes {
   // Create maps for faster lookup
   const previousMap = new Map(previous.map(item => [item.id, item]));
   const currentMap = new Map(current.map(item => [item.id, item]));
   
-  // Find added items (in current but not in previous)
+  // Find added elements (in current but not in previous)
   const added = current.filter(item => !previousMap.has(item.id));
   
-  // Find removed items (in previous but not in current)
+  // Find removed elements (in previous but not in current)
   const removed = previous.filter(item => !currentMap.has(item.id));
   
-  // Find modified items (name or other property changed)
+  // Find modified elements (name changed)
   const modified = current.filter(item => {
     const prevItem = previousMap.get(item.id);
-    return prevItem && (
-      prevItem.name !== item.name || 
-      prevItem.description !== item.description
-    );
+    return prevItem && prevItem.name !== item.name;
   });
   
   return {
-    timestamp: Date.now(),
     added,
-    removed,
-    modified
+    modified,
+    removed
   };
 }
 
-// Find or create a page with the given name
-async function findOrCreatePage(pageName: string): Promise<PageNode> {
-  // Try to find an existing changelog page
-  let changelogPage = figma.root.children.find(page => page.name === pageName);
-  
-  // If the page doesn't exist, create it
-  if (!changelogPage) {
-    changelogPage = figma.createPage();
-    changelogPage.name = pageName;
-  } else {
-    // Make sure the page is loaded if it already exists
-    await changelogPage.loadAsync();
-  }
-  
-  return changelogPage;
-}
-
-// Format changelog text for display in the Figma page
-function formatChangelogText(changelog: ChangelogData): string {
-  const date = new Date(changelog.timestamp);
-  const dateString = date.toISOString().split('T')[0]; // YYYY-MM-DD
-  const timeString = date.toTimeString().split(' ')[0].substring(0, 5); // HH:MM
-  
-  let text = `${dateString} ${timeString}\n\n`;
-  
-  // Add 'Added' section if there are added items
-  if (changelog.added.length > 0) {
-    text += 'Added:\n';
-    for (const item of changelog.added) {
-      text += `- ${formatItemType(item.type)}: ${item.name}\n`;
-    }
-    text += '\n';
-  }
-  
-  // Add 'Removed' section if there are removed items
-  if (changelog.removed.length > 0) {
-    text += 'Removed:\n';
-    for (const item of changelog.removed) {
-      text += `- ${formatItemType(item.type)}: ${item.name}\n`;
-    }
-    text += '\n';
-  }
-  
-  // Add 'Modified' section if there are modified items
-  if (changelog.modified.length > 0) {
-    text += 'Modified:\n';
-    for (const item of changelog.modified) {
-      const prevItem = item; // In this simplified version, we don't track previous values
-      if (prevItem.name !== item.name) {
-        text += `- ${formatItemType(item.type)}: ${prevItem.name} → ${item.name}\n`;
-      } else {
-        text += `- ${formatItemType(item.type)}: ${item.name}\n`;
-      }
-    }
-    text += '\n';
-  }
-  
-  return text;
-}
-
-// Format item type for display
-function formatItemType(type: string): string {
-  if (type === 'component') {
-    return 'Component';
-  } else if (type === 'componentSet') {
-    return 'Component Set';
-  } else if (type === 'variableCollection') {
-    return 'Variable Collection';
-  } else if (type === 'variable') {
-    return 'Variable';
-  } else if (type.startsWith('style:')) {
-    const styleType = type.replace('style:', '');
-    switch (styleType) {
-      case 'text':
-        return 'Text Style';
-      case 'paint':
-        return 'Color Style';
-      case 'grid':
-        return 'Grid Style';
-      case 'effect':
-        return 'Effect Style';
-      default:
-        return styleType.charAt(0).toUpperCase() + styleType.slice(1) + ' Style';
-    }
-  }
-  
-  // Return a capitalized version of the type as a fallback
-  return type.charAt(0).toUpperCase() + type.slice(1);
-}
-
-// Update the Figma page with the changelog
-async function updateChangelogPage(settings: PluginSettings): Promise<void> {
+// Initialize tracking data
+async function initializeTracking(): Promise<void> {
   try {
-    // Get pending changelog entries that haven't been synced to Figma
-    const pendingEntries = await getPendingChangelogEntries();
-    const unsyncedEntries = pendingEntries.filter(entry => !entry.syncedToFigma);
+    const elements = await collectDesignSystemElements();
+  
+    // Save to client storage
+    await figma.clientStorage.setAsync('trackingData', {
+      timestamp: Date.now(),
+      elements: elements
+    });
     
-    if (unsyncedEntries.length === 0) {
-      figma.notify('No pending changes to update in Figma page.');
-      return;
+    // Notify UI
+    figma.ui.postMessage({ 
+      type: 'initialized', 
+      count: elements.length 
+    });
+  } catch (error) {
+    console.error('Error initializing tracking:', error);
+    figma.ui.postMessage({
+      type: 'error',
+      message: 'Failed to initialize tracking: ' + (error instanceof Error ? error.message : String(error))
+    });
+  }
+}
+
+// Update stored tracking data
+async function updateTrackingData(): Promise<void> {
+  try {
+    const elements = await collectDesignSystemElements();
+    
+    // Save to client storage
+    await figma.clientStorage.setAsync('trackingData', {
+      timestamp: Date.now(),
+      elements: elements
+    });
+    
+    // Notify UI
+    figma.ui.postMessage({ 
+      type: 'updated', 
+      count: elements.length 
+    });
+  } catch (error) {
+    console.error('Error updating tracking data:', error);
+    figma.ui.postMessage({
+      type: 'error',
+      message: 'Failed to update tracking data: ' + (error instanceof Error ? error.message : String(error))
+    });
+  }
+}
+
+// Format design system element for display
+function formatElementForDisplay(element: DesignSystemElement): string {
+  let formattedType = '';
+  
+  switch (element.type) {
+    case 'component':
+      formattedType = 'Component';
+      break;
+    case 'componentSet':
+      formattedType = 'Component Set';
+      break;
+    case 'textStyle':
+      formattedType = 'Text Style';
+      break;
+    case 'colorStyle':
+      formattedType = 'Color Style';
+      break;
+    case 'effectStyle':
+      formattedType = 'Effect Style';
+      break;
+    case 'gridStyle':
+      formattedType = 'Grid Style';
+      break;
+    case 'variableCollection':
+      formattedType = 'Variable Collection';
+      break;
+    case 'variable':
+      formattedType = 'Variable';
+      break;
+      default:
+      formattedType = element.type.charAt(0).toUpperCase() + element.type.slice(1);
+    }
+  
+  return `${formattedType} – ${element.name}`;
+}
+
+// Create a text node with logify entry
+async function addToFigma(changes: Changes): Promise<void> {
+  try {
+    // Load required fonts
+    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    await figma.loadFontAsync({ family: "Inter", style: "Medium" });
+    // The SemiBold style might not be available, use Medium instead
+    // await figma.loadFontAsync({ family: "Inter", style: "SemiBold" });
+    
+    // Find or create the 🖹Logify page
+    let changelogPage = figma.root.children.find(page => page.name === "🖹Logify") as PageNode;
+    if (!changelogPage) {
+      changelogPage = figma.createPage();
+      changelogPage.name = "🖹Logify";
     }
     
-    // Find or create the changelog page
-    const changelogPage = await findOrCreatePage('🖹Changelog');
+    // Make sure the page is loaded
+    await changelogPage.loadAsync();
     
-    // Find or create the main container 
+    // Find or create the main container frame
     let mainContainer = changelogPage.findOne(node => 
-      node.type === 'FRAME' && node.name === 'Changelog-Container') as FrameNode;
+      node.type === "FRAME" && node.name === "Logify Container") as FrameNode;
     
-    // If the main container doesn't exist, create it
     if (!mainContainer) {
       mainContainer = figma.createFrame();
-      mainContainer.name = 'Changelog-Container';
-      mainContainer.layoutMode = 'VERTICAL';
-      mainContainer.primaryAxisSizingMode = 'AUTO';
-      mainContainer.counterAxisSizingMode = 'FIXED';
-      mainContainer.itemSpacing = 24; // Gap between entries
-      mainContainer.paddingTop = mainContainer.paddingBottom = 24;
-      mainContainer.paddingLeft = mainContainer.paddingRight = 24;
+      mainContainer.name = "Logify Container";
+      mainContainer.layoutMode = "VERTICAL";
+      mainContainer.primaryAxisSizingMode = "AUTO";
+      mainContainer.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
+      mainContainer.itemSpacing = 24; // 24px gap between entries
+      mainContainer.paddingTop = mainContainer.paddingBottom = 0;
+      mainContainer.paddingLeft = mainContainer.paddingRight = 0;
       mainContainer.fills = []; // Transparent background
-      mainContainer.resize(800, 100); // Initial size, will auto-resize with content
+      mainContainer.layoutAlign = "STRETCH";
       
       // Add container to the page
       changelogPage.appendChild(mainContainer);
     }
     
-    // Load the required font
-    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
-    await figma.loadFontAsync({ family: 'Inter', style: 'Medium' });
+    // Create a new changelog entry frame
+    const entryFrame = figma.createFrame();
+    entryFrame.name = "Logify Entry " + new Date().toISOString().split('T')[0];
+    entryFrame.layoutMode = "VERTICAL";
+    entryFrame.primaryAxisSizingMode = "AUTO"; // Hug contents vertically
+    entryFrame.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
+    entryFrame.itemSpacing = 16; // Gap between sections
+    entryFrame.cornerRadius = 8;
+    entryFrame.paddingTop = entryFrame.paddingBottom = entryFrame.paddingLeft = entryFrame.paddingRight = 16;
+    entryFrame.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+    entryFrame.strokes = [{ type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.9 } }];
+    entryFrame.strokeWeight = 1;
     
-    // Process each unsynced entry
-    for (const entry of unsyncedEntries) {
-      // Format timestamp for the entry
-      const date = new Date(entry.timestamp);
-      const formattedDate = `🕦 ${date.toTimeString().substring(0, 5)} ${date.toLocaleDateString('ru-RU', {
+    // Create timestamp row with icon
+    const date = new Date();
+    const formattedDate = `🕓 ${date.toTimeString().substring(0, 5)} ${date.toLocaleDateString('en-US', {
+      month: '2-digit',
         day: '2-digit',
-        month: '2-digit',
         year: 'numeric'
-      })}`;
-      
-      // Create the frame for this changelog entry
-      const entryFrame = figma.createFrame();
-      entryFrame.name = formattedDate;
-      entryFrame.resize(480, 100); // Set width to 480px, height will adjust with auto layout
-      entryFrame.layoutMode = 'VERTICAL';
-      entryFrame.primaryAxisSizingMode = 'AUTO';
-      entryFrame.counterAxisSizingMode = 'FIXED';
-      entryFrame.itemSpacing = 16; // Gap inside entries
-      entryFrame.paddingTop = entryFrame.paddingRight = entryFrame.paddingBottom = entryFrame.paddingLeft = 24;
-      entryFrame.cornerRadius = 12;
-      entryFrame.strokes = [{ type: 'SOLID', color: { r: 0.83, g: 0.84, b: 0.85 } }];
-      entryFrame.strokeWeight = 1;
-      entryFrame.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-      
-      // Create timestamp text
+    }).replace(/(\d+)\/(\d+)\/(\d+)/, '$1/$2/$3')}`;
+    
       const timestampText = figma.createText();
       timestampText.characters = formattedDate;
-      timestampText.fontSize = 18;
-      timestampText.fontName = { family: 'Inter', style: 'Regular' };
+    timestampText.fontSize = 14;
+    timestampText.fontName = { family: "Inter", style: "Medium" }; // Use Medium instead of SemiBold
       entryFrame.appendChild(timestampText);
       
-      // Add sections for added, modified, and removed items
-      const sections = [
-        { items: entry.added, title: '➕ Added' },
-        { items: entry.modified, title: 'Modified' },
-        { items: entry.removed, title: 'Removed' }
-      ];
-      
-      // Create each section that has items
-      for (const section of sections) {
-        if (section.items.length > 0) {
+    // Define a helper function to create section frames
+    const createSection = (title: string, items: DesignSystemElement[]): FrameNode => {
           // Create section container
-          const sectionContainer = figma.createFrame();
-          sectionContainer.name = `V-Container - ${section.title}`;
-          sectionContainer.layoutMode = 'VERTICAL';
-          sectionContainer.primaryAxisSizingMode = 'AUTO';
-          sectionContainer.counterAxisSizingMode = 'AUTO';
-          sectionContainer.itemSpacing = 8; // Gap between items in a section
-          sectionContainer.fills = []; // No background
+      const sectionFrame = figma.createFrame();
+      sectionFrame.name = title;
+      sectionFrame.layoutMode = "VERTICAL";
+      sectionFrame.primaryAxisSizingMode = "AUTO";
+      sectionFrame.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
+      sectionFrame.itemSpacing = 12;
+      sectionFrame.fills = []; // Transparent
           
           // Create section title
-          const sectionTitle = figma.createText();
-          sectionTitle.characters = section.title;
-          sectionTitle.fontSize = 18;
-          sectionTitle.fontName = { family: 'Inter', style: 'Medium' };
-          sectionContainer.appendChild(sectionTitle);
+      const titleText = figma.createText();
+      titleText.characters = title;
+      titleText.fontSize = 14;
+      titleText.fontName = { family: "Inter", style: "Medium" }; // Use Medium instead of SemiBold
+      sectionFrame.appendChild(titleText);
           
-          // Create items container
-          const itemsContainer = figma.createFrame();
-          itemsContainer.name = `V-Container - ${section.items[0] ? formatItemType(section.items[0].type) + ' - ' + section.items[0].name : 'Items'}`;
-          itemsContainer.layoutMode = 'VERTICAL';
-          itemsContainer.primaryAxisSizingMode = 'AUTO';
-          itemsContainer.counterAxisSizingMode = 'FIXED';
-          itemsContainer.itemSpacing = 8;
-          itemsContainer.fills = []; // No background
+      // Create items list
+      const itemsFrame = figma.createFrame();
+      itemsFrame.name = "Items";
+      itemsFrame.layoutMode = "VERTICAL";
+      itemsFrame.primaryAxisSizingMode = "AUTO";
+      itemsFrame.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
+      itemsFrame.itemSpacing = 8;
+      itemsFrame.fills = []; // Transparent
           
           // Add each item
-          for (const item of section.items) {
+      for (const item of items) {
             const itemText = figma.createText();
-            
-            if (section.title === 'Modified') {
-              // For modified items, show the change
-              const prevItem = item; // In this simplified version, we don't track previous values
-              // Check if the name has changed
-              if (prevItem.name !== item.name) {
-                itemText.characters = `${formatItemType(item.type)} ${prevItem.name} → ${item.name}`;
-              } else {
-                itemText.characters = `${formatItemType(item.type)} ${item.name}`;
-              }
-            } else {
-              // For added or removed items
-              itemText.characters = `${formatItemType(item.type)} - ${item.name}`;
-            }
-            
-            itemText.fontSize = 18;
-            itemText.fontName = { family: 'Inter', style: 'Regular' };
-            itemsContainer.appendChild(itemText);
-          }
-          
-          sectionContainer.appendChild(itemsContainer);
-          entryFrame.appendChild(sectionContainer);
-        }
+        itemText.characters = formatElementForDisplay(item);
+        itemText.fontSize = 14;
+        itemText.fontName = { family: "Inter", style: "Regular" };
+        itemsFrame.appendChild(itemText);
       }
       
-      // Add the entry frame to the container (newest entries at the top)
+      sectionFrame.appendChild(itemsFrame);
+      return sectionFrame;
+    };
+    
+    // Add sections for added, modified, and removed items (only if they exist)
+    if (changes.added.length > 0) {
+      const addedSection = createSection("+ Added", changes.added);
+      entryFrame.appendChild(addedSection);
+            }
+            
+    if (changes.modified.length > 0) {
+      const modifiedSection = createSection("Changed", changes.modified);
+      entryFrame.appendChild(modifiedSection);
+          }
+          
+    if (changes.removed.length > 0) {
+      const removedSection = createSection("Removed", changes.removed);
+      entryFrame.appendChild(removedSection);
+      }
+      
+    // Prepend the entry frame to the container (newest at the top)
       if (mainContainer.children.length > 0) {
-        // Insert at the top (index 0)
         mainContainer.insertChild(0, entryFrame);
       } else {
-        // If it's the first child, just append it
         mainContainer.appendChild(entryFrame);
       }
       
-      // Mark this entry as synced
-      entry.syncedToFigma = true;
-    }
+    // Switch to the logify page - using async method for dynamic-page support
+    await figma.setCurrentPageAsync(changelogPage);
     
-    // Save updated entries back to clientStorage
-    await savePendingChangelogEntries(pendingEntries);
+    // Update tracking data
+    await updateTrackingData();
     
-    // Send success notification
-    figma.notify('Changelog updated in Figma page.');
-    
-    // Update UI
+    // Notify UI
+    figma.ui.postMessage({ type: 'addedToFigma' });
+    figma.notify('Logify entry added to 🖹Logify page');
+  } catch (error) {
+    console.error('Error adding to Figma:', error);
     figma.ui.postMessage({ 
-      type: 'changelog-updated', 
-      message: 'Changelog updated in Figma page.'
+      type: 'error',
+      message: 'Failed to add to Figma: ' + (error instanceof Error ? error.message : String(error))
     });
-    
-  } catch (error: any) {
-    console.error('Error updating changelog page:', error);
-    figma.notify('Failed to update changelog page: ' + error.message, { error: true });
-  }
+}
 }
 
-// Generate a unique ID for changelog entries
-function generateUniqueId(): string {
-  return Date.now().toString() + Math.random().toString(36).substring(2, 9);
-}
-
-// Save the current library state to clientStorage
-async function saveCurrentState(libraryItems: LibraryItem[]): Promise<void> {
-  await figma.clientStorage.setAsync('baselineSnapshot', JSON.stringify(libraryItems));
-  await figma.clientStorage.setAsync('lastUpdatedAt', Date.now().toString());
-}
-
-// Get the previous library state from clientStorage
-async function getPreviousState(): Promise<LibraryItem[]> {
-  const data = await figma.clientStorage.getAsync('baselineSnapshot');
-  return data ? JSON.parse(data) : [];
-}
-
-// Add a new changelog entry to the pending entries
-async function addPendingChangelogEntry(changelog: ChangelogData): Promise<void> {
-  const pendingEntries = await getPendingChangelogEntries();
-  
-  const newEntry: ChangelogEntry = {
-    id: generateUniqueId(),
-    timestamp: changelog.timestamp,
-    added: changelog.added,
-    removed: changelog.removed,
-    modified: changelog.modified,
-    syncedToFigma: false
-  };
-  
-  pendingEntries.push(newEntry);
-  await savePendingChangelogEntries(pendingEntries);
-}
-
-// Get all pending changelog entries from clientStorage
-async function getPendingChangelogEntries(): Promise<ChangelogEntry[]> {
-  const data = await figma.clientStorage.getAsync('pendingChangelogEntries');
-  return data ? JSON.parse(data) : [];
-}
-
-// Save pending changelog entries to clientStorage
-async function savePendingChangelogEntries(entries: ChangelogEntry[]): Promise<void> {
-  await figma.clientStorage.setAsync('pendingChangelogEntries', JSON.stringify(entries));
-}
-
-// Save plugin settings to clientStorage
-async function saveSettings(settings: PluginSettings): Promise<void> {
-  await figma.clientStorage.setAsync('settings', JSON.stringify(settings));
-}
-
-// Load plugin settings from clientStorage
-async function loadSettings(): Promise<PluginSettings> {
-  const data = await figma.clientStorage.getAsync('settings');
-  return data ? JSON.parse(data) : DEFAULT_SETTINGS;
-}
-
-// Reset all plugin data
-async function resetPluginData(): Promise<void> {
-  await figma.clientStorage.setAsync('baselineSnapshot', '');
-  await figma.clientStorage.setAsync('lastUpdatedAt', '');
-  await figma.clientStorage.setAsync('pendingChangelogEntries', '');
-  
-  // We keep the settings to maintain user preferences
-  figma.notify('Library has been reset. Click "Sync Library" to set a new baseline.');
-  
-  figma.ui.postMessage({ 
-    type: 'reset-complete'
-  });
-}
-
-// Handle messages from the UI
+// Handle UI messages
 figma.ui.onmessage = async (msg: PluginMessage) => {
-  if (msg.type === 'update-changelog') {
-    // Update the Figma page with pending changelog entries
-    const settings = await loadSettings();
-    await updateChangelogPage(settings);
+  if (msg.type === 'initialize') {
+    await initializeTracking();
   } else if (msg.type === 'refresh') {
-    // Re-run the main function to refresh the changelog
-    await main();
-  } else if (msg.type === 'reset-baseline') {
-    // Reset all plugin data
-    await resetPluginData();
-  } else if (msg.type === 'update-settings') {
-    // Update plugin settings
-    await saveSettings(msg.settings);
-    figma.ui.postMessage({ type: 'settings-updated' });
-    
-    // Refresh UI with updated settings
-    await main();
-  } else if (msg.type === 'notify') {
-    // Show a notification using Figma's native notification system
-    figma.notify(msg.message);
-  } else if (msg.type === 'notify-error') {
-    // Show an error notification using Figma's native notification system
-    figma.notify(msg.message, { error: true });
+    await scanAndCompare();
+  } else if (msg.type === 'addToFigma') {
+    if (msg.changes) {
+      await addToFigma(msg.changes);
+    } else {
+      figma.notify('No changes to add to Figma', { error: true });
+    }
+  } else if (msg.type === 'viewRecords') {
+    const storedData = await figma.clientStorage.getAsync('trackingData') as TrackingData | null;
+    if (storedData) {
+      figma.ui.postMessage({
+        type: 'records',
+        elements: storedData.elements,
+        timestamp: storedData.timestamp
+      });
+    } else {
+      figma.ui.postMessage({
+        type: 'error',
+        message: 'No records found'
+      });
+    }
   }
 };
 
 // Start the plugin
-main();
+initializePlugin();

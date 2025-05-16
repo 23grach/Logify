@@ -4,15 +4,35 @@
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",
-  "capabilities": [],
-  "enableProposedApi": false,
   "documentAccess": "dynamic-page",
   "editorType": [
     "figma"
   ],
+  "capabilities": [],
+  "enableProposedApi": false,
   "networkAccess": {
     "allowedDomains": [
       "none"
     ]
-  }
+  },
+  
+  "relaunchButtons": [],
+  "permissions": [],
+  
+  "description": "Track, document, and visualize changes to your design system elements with automated logging.",
+  "widgetApi": "1.0.0",
+  
+  "icon": "assets/icon.png",
+  "featured": true,
+  
+  "menu": [
+    {
+      "name": "Logify",
+      "main": "code.js",
+      "ui": "ui.html"
+    }
+  ],
+  
+  "author": "grach",
+  "website": "https://gr-ch.com"
 }
