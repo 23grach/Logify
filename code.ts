@@ -13,6 +13,8 @@ interface DesignSystemElement {
   name: string;
   type: string;
   key?: string;
+  variantProperties?: { [property: string]: string } | null;
+  parentName?: string;
 }
 
 interface TrackingData {
@@ -77,11 +79,49 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       
       // Add components to the list
       for (const component of components) {
+        // Store variant properties and parent name if available
+        let variantProperties = null;
+        
+        // Try to get variant properties (both new and old API)
+        if ('variantProperties' in component && component.variantProperties) {
+          variantProperties = component.variantProperties;
+        } else if ('componentProperties' in component && component.componentProperties) {
+          // For newer Figma versions using componentProperties API
+          // Extract variant properties from component properties
+          variantProperties = {};
+          
+          try {
+            // TypeScript doesn't know the exact shape of componentProperties,
+            // so we need to be careful with the access here
+            const compProps = component.componentProperties as any;
+            
+            if (compProps && typeof compProps === 'object') {
+              Object.keys(compProps).forEach(propName => {
+                const propValue = compProps[propName];
+                if (propValue && propValue.type === 'VARIANT' && propValue.value) {
+                  variantProperties![propName] = propValue.value;
+                }
+              });
+            }
+          } catch (err) {
+            console.error('Error accessing component properties:', err);
+          }
+          
+          // If no variant properties were found, set to null
+          if (Object.keys(variantProperties).length === 0) {
+            variantProperties = null;
+          }
+        }
+        
+        const parentName = component.parent && component.parent.type === 'COMPONENT_SET' ? component.parent.name : undefined;
+        
         elements.push({
           id: component.id,
           name: component.name,
           type: 'component',
-          key: component.key
+          key: component.key,
+          variantProperties,
+          parentName
         });
       }
       
@@ -317,9 +357,33 @@ function formatElementForDisplay(element: DesignSystemElement): string {
     case 'variable':
       formattedType = 'Variable';
       break;
-      default:
+    default:
       formattedType = element.type.charAt(0).toUpperCase() + element.type.slice(1);
+  }
+  
+  // Handle variant components
+  if (element.type === 'component' && element.variantProperties && Object.keys(element.variantProperties).length > 0) {
+    // If we have the parent component set name, use it instead of the component's name
+    const baseName = element.parentName || element.name.split('/')[0];
+    
+    // Format variant properties as Prop1=Value1, Prop2=Value2
+    const variantProps = element.variantProperties;
+    const propKeys = Object.keys(variantProps);
+    
+    // Filter out any empty values or properties that might duplicate the parent name
+    const filteredProps = propKeys.filter(prop => {
+      const value = variantProps[prop];
+      return value && value.trim() !== '' && value.toLowerCase() !== baseName.toLowerCase();
+    });
+    
+    if (filteredProps.length > 0) {
+      const variantPropsString = filteredProps
+        .map(prop => `${prop}=${variantProps[prop]}`)
+        .join(', ');
+      
+      return `${formattedType} – ${baseName} (${variantPropsString})`;
     }
+  }
   
   return `${formattedType} – ${element.name}`;
 }

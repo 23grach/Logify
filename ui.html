@@ -258,6 +258,34 @@
           return type.charAt(0).toUpperCase() + type.slice(1);
       }
     }
+
+    // Format component name with variant properties if available
+    function formatComponentName(item) {
+      if (item.type === 'component' && item.variantProperties && Object.keys(item.variantProperties).length > 0) {
+        // If we have the parent component set name, use it instead of the component's name
+        const baseName = item.parentName || item.name.split('/')[0];
+        
+        // Format variant properties as Prop1=Value1, Prop2=Value2
+        const variantProps = item.variantProperties;
+        const propKeys = Object.keys(variantProps);
+        
+        // Filter out any empty values or properties that might duplicate the parent name
+        const filteredProps = propKeys.filter(prop => {
+          const value = variantProps[prop];
+          return value && value.trim() !== '' && value.toLowerCase() !== baseName.toLowerCase();
+        });
+        
+        if (filteredProps.length > 0) {
+          const variantPropsString = filteredProps
+            .map(prop => `${prop}=${variantProps[prop]}`)
+            .join(', ');
+          
+          return `${baseName} (${variantPropsString})`;
+        }
+      }
+      
+      return item.name;
+    }
     
     // Render initialization screen
     function renderInitScreen() {
@@ -321,7 +349,7 @@
               <div class="items-container">
                 ${items.map(item => `
                   <div class="item">
-                    <div class="item-name">${item.name}</div>
+                    <div class="item-name">${formatComponentName(item)}</div>
                   </div>
                 `).join('')}
               </div>
@@ -367,7 +395,7 @@
                   ${changes.added.map(item => `
                     <div class="item">
                       <div class="item-type">${formatElementType(item.type)}</div>
-                      <div class="item-name">${item.name}</div>
+                      <div class="item-name">${formatComponentName(item)}</div>
                     </div>
                   `).join('')}
                 </div>
@@ -381,7 +409,7 @@
                   ${changes.modified.map(item => `
                     <div class="item">
                       <div class="item-type">${formatElementType(item.type)}</div>
-                      <div class="item-name">${item.name}</div>
+                      <div class="item-name">${formatComponentName(item)}</div>
                     </div>
                   `).join('')}
                 </div>
@@ -395,7 +423,7 @@
                   ${changes.removed.map(item => `
                     <div class="item">
                       <div class="item-type">${formatElementType(item.type)}</div>
-                      <div class="item-name">${item.name}</div>
+                      <div class="item-name">${formatComponentName(item)}</div>
                     </div>
                   `).join('')}
                 </div>
