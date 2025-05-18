@@ -595,8 +595,7 @@ async function addToFigma(changes: Changes): Promise<void> {
     // Load required fonts
     await figma.loadFontAsync({ family: "Inter", style: "Regular" });
     await figma.loadFontAsync({ family: "Inter", style: "Medium" });
-    // The SemiBold style might not be available, use Medium instead
-    // await figma.loadFontAsync({ family: "Inter", style: "SemiBold" });
+    await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
     
     // Find or create the 🖹Logify page
     let changelogPage = figma.root.children.find(page => page.name === "🖹Logify") as PageNode;
@@ -605,24 +604,26 @@ async function addToFigma(changes: Changes): Promise<void> {
       changelogPage.name = "🖹Logify";
     }
     
-    // Make sure the page is loaded
     await changelogPage.loadAsync();
     
     // Find or create the main container frame
     let mainContainer = changelogPage.findOne(node => 
-      node.type === "FRAME" && node.name === "Logify Container") as FrameNode;
+      node.type === "FRAME" && node.name === "Changelog Container") as FrameNode;
     
     if (!mainContainer) {
       mainContainer = figma.createFrame();
-      mainContainer.name = "Logify Container";
+      mainContainer.name = "Changelog Container";
       mainContainer.layoutMode = "VERTICAL";
       mainContainer.primaryAxisSizingMode = "AUTO";
-      mainContainer.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
+      mainContainer.counterAxisSizingMode = "FIXED";
+      mainContainer.resize(360, mainContainer.height); // Fixed width 360px
       mainContainer.itemSpacing = 24; // 24px gap between entries
-      mainContainer.paddingTop = mainContainer.paddingBottom = 0;
-      mainContainer.paddingLeft = mainContainer.paddingRight = 0;
-      mainContainer.fills = []; // Transparent background
-      mainContainer.layoutAlign = "STRETCH";
+      mainContainer.paddingTop = mainContainer.paddingBottom = 24;
+      mainContainer.paddingLeft = mainContainer.paddingRight = 24;
+      mainContainer.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }]; // White background
+      mainContainer.cornerRadius = 16; // 16px border radius
+      mainContainer.strokes = [{ type: "SOLID", color: { r: 213/255, g: 215/255, b: 222/255 } }]; // Outline/Secondary
+      mainContainer.strokeWeight = 1;
       
       // Add container to the page
       changelogPage.appendChild(mainContainer);
@@ -632,45 +633,49 @@ async function addToFigma(changes: Changes): Promise<void> {
     const entryFrame = figma.createFrame();
     entryFrame.name = "Logify Entry " + new Date().toISOString().split('T')[0];
     entryFrame.layoutMode = "VERTICAL";
-    entryFrame.primaryAxisSizingMode = "AUTO"; // Hug contents vertically
-    entryFrame.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
-    entryFrame.itemSpacing = 16; // Gap between sections
-    entryFrame.cornerRadius = 8;
-    entryFrame.paddingTop = entryFrame.paddingBottom = entryFrame.paddingLeft = entryFrame.paddingRight = 16;
-    entryFrame.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
-    entryFrame.strokes = [{ type: "SOLID", color: { r: 0.9, g: 0.9, b: 0.9 } }];
-    entryFrame.strokeWeight = 1;
+    entryFrame.primaryAxisSizingMode = "AUTO";
+    entryFrame.counterAxisSizingMode = "AUTO";
+    entryFrame.layoutAlign = "STRETCH";
+    entryFrame.itemSpacing = 16; // 16px gap between sections
+    entryFrame.fills = [];
     
     // Create timestamp row with icon
     const date = new Date();
-    const formattedDate = `🕓 ${date.toTimeString().substring(0, 5)} ${date.toLocaleDateString('en-US', {
+    const formattedDate = `🕐 ${date.toTimeString().substring(0, 5)} ${date.toLocaleDateString('en-US', {
       month: '2-digit',
-        day: '2-digit',
-        year: 'numeric'
-    }).replace(/(\d+)\/(\d+)\/(\d+)/, '$1/$2/$3')}`;
+      day: 'numeric',
+      year: 'numeric'
+    }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3/$1/$2')}`;
     
-      const timestampText = figma.createText();
-      timestampText.characters = formattedDate;
-    timestampText.fontSize = 14;
-    timestampText.fontName = { family: "Inter", style: "Medium" }; // Use Medium instead of SemiBold
-      entryFrame.appendChild(timestampText);
+    const timestampText = figma.createText();
+    timestampText.characters = formattedDate;
+    timestampText.fontSize = 18; // Large size
+    timestampText.fontName = { family: "Inter", style: "Semi Bold" };
+    timestampText.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }]; // Text/Primary
+    timestampText.lineHeight = { value: 20, unit: "PIXELS" }; // 111.111%
+    entryFrame.appendChild(timestampText);
       
     // Define a helper function to create section frames
     const createSection = (title: string, items: DesignSystemElement[]): FrameNode => {
-          // Create section container
       const sectionFrame = figma.createFrame();
       sectionFrame.name = title;
       sectionFrame.layoutMode = "VERTICAL";
       sectionFrame.primaryAxisSizingMode = "AUTO";
-      sectionFrame.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
-      sectionFrame.itemSpacing = 12;
-      sectionFrame.fills = []; // Transparent
+      sectionFrame.counterAxisSizingMode = "AUTO";
+      sectionFrame.layoutAlign = "STRETCH";
+      sectionFrame.itemSpacing = 8; // 8px gap between items within section
+      sectionFrame.fills = [];
           
-          // Create section title
+      // Create section title with appropriate icon
       const titleText = figma.createText();
-      titleText.characters = title;
-      titleText.fontSize = 14;
-      titleText.fontName = { family: "Inter", style: "Medium" }; // Use Medium instead of SemiBold
+      let icon = "💡";
+      if (title.includes("Changed")) icon = "✏️";
+      if (title.includes("Removed")) icon = "🗑️";
+      titleText.characters = `${icon} ${title.replace("+ ", "")}`;
+      titleText.fontSize = 18; // Large size
+      titleText.fontName = { family: "Inter", style: "Semi Bold" };
+      titleText.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }]; // Text/Primary
+      titleText.lineHeight = { value: 20, unit: "PIXELS" }; // 111.111%
       sectionFrame.appendChild(titleText);
           
       // Create items list
@@ -678,16 +683,18 @@ async function addToFigma(changes: Changes): Promise<void> {
       itemsFrame.name = "Items";
       itemsFrame.layoutMode = "VERTICAL";
       itemsFrame.primaryAxisSizingMode = "AUTO";
-      itemsFrame.counterAxisSizingMode = "AUTO"; // Hug contents horizontally
+      itemsFrame.counterAxisSizingMode = "AUTO";
+      itemsFrame.layoutAlign = "STRETCH";
       itemsFrame.itemSpacing = 8;
-      itemsFrame.fills = []; // Transparent
+      itemsFrame.fills = [];
           
-          // Add each item
+      // Add each item
       for (const item of items) {
-            const itemText = figma.createText();
+        const itemText = figma.createText();
         itemText.characters = formatElementForDisplay(item);
-        itemText.fontSize = 14;
+        itemText.fontSize = 12; // Small size
         itemText.fontName = { family: "Inter", style: "Regular" };
+        itemText.fills = [{ type: "SOLID", color: { r: 83/255, g: 88/255, b: 98/255 } }]; // Text/Secondary
         itemsFrame.appendChild(itemText);
       }
       
@@ -699,25 +706,25 @@ async function addToFigma(changes: Changes): Promise<void> {
     if (changes.added.length > 0) {
       const addedSection = createSection("+ Added", changes.added);
       entryFrame.appendChild(addedSection);
-            }
-            
+    }
+    
     if (changes.modified.length > 0) {
       const modifiedSection = createSection("Changed", changes.modified);
       entryFrame.appendChild(modifiedSection);
-          }
-          
+    }
+    
     if (changes.removed.length > 0) {
       const removedSection = createSection("Removed", changes.removed);
       entryFrame.appendChild(removedSection);
-      }
-      
+    }
+    
     // Prepend the entry frame to the container (newest at the top)
-      if (mainContainer.children.length > 0) {
-        mainContainer.insertChild(0, entryFrame);
-      } else {
-        mainContainer.appendChild(entryFrame);
-      }
-      
+    if (mainContainer.children.length > 0) {
+      mainContainer.insertChild(0, entryFrame);
+    } else {
+      mainContainer.appendChild(entryFrame);
+    }
+    
     // Switch to the logify page - using async method for dynamic-page support
     await figma.setCurrentPageAsync(changelogPage);
     
@@ -733,7 +740,7 @@ async function addToFigma(changes: Changes): Promise<void> {
       type: 'error',
       message: 'Failed to add to Figma: ' + (error instanceof Error ? error.message : String(error))
     });
-}
+  }
 }
 
 // Handle UI messages
