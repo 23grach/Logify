@@ -13,8 +13,20 @@ interface DesignSystemElement {
   name: string;
   type: string;
   key?: string;
+  description?: string;
   variantProperties?: { [property: string]: string } | null;
   parentName?: string;
+  modifiedAt?: number;
+  updatedAt?: number;
+  // Add properties for tracking visual changes
+  fills?: string;
+  strokes?: string;
+  effects?: string;
+  styles?: { [key: string]: string };
+  componentProperties?: string;
+  // Add structure tracking
+  children?: string;
+  structure?: string;
 }
 
 interface TrackingData {
@@ -39,10 +51,13 @@ const TRACKING_DATA_KEY = 'trackingData';
 
 // Helper functions for shared data storage
 function getStoredTrackingData(): TrackingData | null {
-  const storedDataStr = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY);
-  if (!storedDataStr) return null;
   try {
-    return JSON.parse(storedDataStr) as TrackingData;
+    const storedDataStr = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY);
+    console.log('Raw stored data:', storedDataStr);
+    if (!storedDataStr) return null;
+    const data = JSON.parse(storedDataStr) as TrackingData;
+    console.log('Parsed stored data:', data);
+    return data;
   } catch (error) {
     console.error('Error parsing stored data:', error);
     return null;
@@ -54,7 +69,7 @@ function setStoredTrackingData(data: TrackingData): void {
 }
 
 // Main entry point
-  figma.showUI(__html__, { width: 400, height: 500 });
+figma.showUI(__html__, { width: 400, height: 500 });
 
 // Initialize plugin
 async function initializePlugin(): Promise<void> {
@@ -78,6 +93,86 @@ async function initializePlugin(): Promise<void> {
   }
 }
 
+// Helper function to serialize node structure
+function serializeNodeStructure(node: SceneNode): string {
+  try {
+    // Basic node info
+    const nodeInfo: any = {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      visible: node.visible,
+      locked: node.locked
+    };
+    
+    // Add children recursively if the node is a parent type
+    if ('children' in node) {
+      nodeInfo.children = (node as FrameNode | ComponentNode | ComponentSetNode | InstanceNode).children.map(child => serializeNodeStructure(child));
+    }
+    
+    return JSON.stringify(nodeInfo);
+  } catch (error) {
+    console.error('Error serializing node structure:', error);
+    return '';
+  }
+}
+
+// Helper function to serialize visual properties
+function serializeVisualProperties(node: ComponentNode | ComponentSetNode | BaseStyle): {
+  fills?: string;
+  strokes?: string;
+  effects?: string;
+  styles?: { [key: string]: string };
+  componentProperties?: string;
+  children?: string;
+  structure?: string;
+} {
+  const result: any = {};
+  
+  try {
+    // Serialize fills
+    if ('fills' in node && node.fills) {
+      result.fills = JSON.stringify(node.fills);
+    }
+    
+    // Serialize strokes
+    if ('strokes' in node && node.strokes) {
+      result.strokes = JSON.stringify(node.strokes);
+    }
+    
+    // Serialize effects
+    if ('effects' in node && node.effects) {
+      result.effects = JSON.stringify(node.effects);
+    }
+    
+    // Serialize styles
+    if ('styles' in node && node.styles) {
+      result.styles = JSON.stringify(node.styles);
+    }
+    
+    // Serialize component properties
+    if ('componentProperties' in node && node.componentProperties) {
+      result.componentProperties = JSON.stringify(node.componentProperties);
+    }
+    
+    // Serialize children and structure for components and component sets
+    if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
+      // Get direct children IDs
+      if ('children' in node) {
+        result.children = JSON.stringify(node.children.map(child => child.id));
+      }
+      
+      // Get full node structure including all nested elements
+      result.structure = serializeNodeStructure(node);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error serializing visual properties:', error);
+    return {};
+  }
+}
+
 // Collect all design system elements in the current file
 async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
   const elements: DesignSystemElement[] = [];
@@ -87,7 +182,7 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
     await figma.loadAllPagesAsync();
     
     // Process each page to find components
-  for (const page of figma.root.children) {
+    for (const page of figma.root.children) {
       // Skip private pages if needed
       if (page.getSharedPluginData('figma', 'private') === 'true') {
         continue;
@@ -107,14 +202,10 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
           variantProperties = component.variantProperties;
         } else if ('componentProperties' in component && component.componentProperties) {
           // For newer Figma versions using componentProperties API
-          // Extract variant properties from component properties
           variantProperties = {};
           
           try {
-            // TypeScript doesn't know the exact shape of componentProperties,
-            // so we need to be careful with the access here
             const compProps = component.componentProperties as any;
-            
             if (compProps && typeof compProps === 'object') {
               Object.keys(compProps).forEach(propName => {
                 const propValue = compProps[propName];
@@ -135,24 +226,38 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
         
         const parentName = component.parent && component.parent.type === 'COMPONENT_SET' ? component.parent.name : undefined;
         
+        // Get visual properties
+        const visualProps = serializeVisualProperties(component);
+        
         elements.push({
           id: component.id,
           name: component.name,
           type: 'component',
           key: component.key,
+          description: component.description,
           variantProperties,
-          parentName
+          parentName,
+          modifiedAt: Date.now(),
+          updatedAt: Date.now(),
+          ...visualProps
         });
       }
       
       // Add component sets to the list
       for (const componentSet of componentSets) {
+        // Get visual properties
+        const visualProps = serializeVisualProperties(componentSet);
+        
         elements.push({
           id: componentSet.id,
           name: componentSet.name,
           type: 'componentSet',
-          key: componentSet.key
-          });
+          key: componentSet.key,
+          description: componentSet.description,
+          modifiedAt: Date.now(),
+          updatedAt: Date.now(),
+          ...visualProps
+        });
       }
     }
     
@@ -163,71 +268,62 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
     const gridStyles = await figma.getLocalGridStylesAsync();
     
     // Add text styles
-  for (const style of textStyles) {
+    for (const style of textStyles) {
       elements.push({
-      id: style.id,
-      name: style.name,
+        id: style.id,
+        name: style.name,
         type: 'textStyle',
-      key: style.key
-    });
-  }
-  
+        key: style.key,
+        description: style.description,
+        modifiedAt: Date.now(),
+        updatedAt: Date.now(),
+        ...serializeVisualProperties(style)
+      });
+    }
+    
     // Add color styles
     for (const style of colorStyles) {
       elements.push({
-      id: style.id,
-      name: style.name,
+        id: style.id,
+        name: style.name,
         type: 'colorStyle',
-      key: style.key
-    });
-  }
-  
-    // Add effect styles
-  for (const style of effectStyles) {
-      elements.push({
-      id: style.id,
-      name: style.name,
-        type: 'effectStyle',
-      key: style.key
-    });
-  }
-  
-    // Add grid styles
-  for (const style of gridStyles) {
-      elements.push({
-      id: style.id,
-      name: style.name,
-        type: 'gridStyle',
-      key: style.key
-    });
-  }
-  
-    // Get variables and collections
-  const collections = await figma.variables.getLocalVariableCollectionsAsync();
-    
-    // Add variable collections and their variables
-  for (const collection of collections) {
-      elements.push({
-      id: collection.id,
-      name: collection.name,
-      type: 'variableCollection'
-    });
-    
-    // Add all variables in this collection
-    const variableIds = collection.variableIds;
-    for (const id of variableIds) {
-      const variable = await figma.variables.getVariableByIdAsync(id);
-      if (variable) {
-          elements.push({
-          id: variable.id,
-          name: variable.name,
-          type: 'variable',
-          key: variable.key
-        });
-      }
+        key: style.key,
+        description: style.description,
+        modifiedAt: Date.now(),
+        updatedAt: Date.now(),
+        ...serializeVisualProperties(style)
+      });
     }
-  }
-  
+    
+    // Add effect styles
+    for (const style of effectStyles) {
+      elements.push({
+        id: style.id,
+        name: style.name,
+        type: 'effectStyle',
+        key: style.key,
+        description: style.description,
+        modifiedAt: Date.now(),
+        updatedAt: Date.now(),
+        ...serializeVisualProperties(style)
+      });
+    }
+    
+    // Add grid styles
+    for (const style of gridStyles) {
+      elements.push({
+        id: style.id,
+        name: style.name,
+        type: 'gridStyle',
+        key: style.key,
+        description: style.description,
+        modifiedAt: Date.now(),
+        updatedAt: Date.now(),
+        ...serializeVisualProperties(style)
+      });
+    }
+    
+    console.log('Collected elements:', elements);
     return elements;
   } catch (error) {
     console.error('Error collecting design system elements:', error);
@@ -235,67 +331,89 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
   }
 }
 
-// Compare current elements with stored elements
-async function scanAndCompare(): Promise<void> {
-  try {
-    // Get current elements
-    const currentElements = await collectDesignSystemElements();
-    
-    // Get stored elements
-    const storedData = getStoredTrackingData();
-    
-    if (!storedData) {
-      // No stored data - send total count message
-      figma.ui.postMessage({ 
-        type: 'scanComplete', 
-        count: currentElements.length,
-        hasChanges: false
-      });
-      return;
-    }
-    
-    // Compare current vs stored elements
-    const changes = compareElements(storedData.elements, currentElements);
-    
-    // Send results to UI
-    figma.ui.postMessage({
-      type: 'changes',
-      changes: changes,
-      timestamp: Date.now(),
-      hasChanges: changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0
-    });
-  } catch (error) {
-    console.error('Error scanning for changes:', error);
-    figma.ui.postMessage({
-      type: 'error',
-      message: 'Failed to scan for changes: ' + (error instanceof Error ? error.message : String(error))
-    });
-  }
-}
-
-// Compare two sets of elements
+// Update comparison function to check structure changes
 function compareElements(previous: DesignSystemElement[], current: DesignSystemElement[]): Changes {
-  // Create maps for faster lookup
+  console.log('Comparing elements:', { previous, current });
+  
   const previousMap = new Map(previous.map(item => [item.id, item]));
   const currentMap = new Map(current.map(item => [item.id, item]));
+  const processedIds = new Set<string>();
   
-  // Find added elements (in current but not in previous)
-  const added = current.filter(item => !previousMap.has(item.id));
-  
-  // Find removed elements (in previous but not in current)
-  const removed = previous.filter(item => !currentMap.has(item.id));
-  
-  // Find modified elements (name changed)
   const modified = current.filter(item => {
     const prevItem = previousMap.get(item.id);
-    return prevItem && prevItem.name !== item.name;
+    if (!prevItem) return false;
+    
+    processedIds.add(item.id);
+    
+    const changes = {
+      nameChanged: prevItem.name !== item.name,
+      keyChanged: prevItem.key !== item.key,
+      descriptionChanged: prevItem.description !== item.description,
+      variantPropsChanged: JSON.stringify(prevItem.variantProperties) !== JSON.stringify(item.variantProperties),
+      parentNameChanged: prevItem.parentName !== item.parentName,
+      fillsChanged: prevItem.fills !== item.fills,
+      strokesChanged: prevItem.strokes !== item.strokes,
+      effectsChanged: prevItem.effects !== item.effects,
+      stylesChanged: JSON.stringify(prevItem.styles) !== JSON.stringify(item.styles),
+      componentPropertiesChanged: prevItem.componentProperties !== item.componentProperties,
+      // Add structure change detection
+      childrenChanged: prevItem.children !== item.children,
+      structureChanged: prevItem.structure !== item.structure
+    };
+    
+    const hasChanges = changes.nameChanged || 
+                      changes.keyChanged || 
+                      changes.descriptionChanged || 
+                      changes.variantPropsChanged || 
+                      changes.parentNameChanged ||
+                      changes.fillsChanged ||
+                      changes.strokesChanged ||
+                      changes.effectsChanged ||
+                      changes.stylesChanged ||
+                      changes.componentPropertiesChanged ||
+                      changes.childrenChanged ||
+                      changes.structureChanged;
+    
+    if (hasChanges) {
+      console.log('Element changes detected:', {
+        id: item.id,
+        name: item.name,
+        changes,
+        structureChange: changes.structureChanged || changes.childrenChanged ? {
+          previousChildren: prevItem.children,
+          currentChildren: item.children,
+          previousStructure: prevItem.structure,
+          currentStructure: item.structure
+        } : undefined,
+        previous: prevItem,
+        current: item
+      });
+    }
+    
+    return hasChanges;
   });
   
-  return {
-    added,
-    modified,
-    removed
-  };
+  const added = current.filter(item => !processedIds.has(item.id) && !previousMap.has(item.id));
+  const removed = previous.filter(item => !processedIds.has(item.id) && !currentMap.has(item.id));
+  
+  const result = { added, modified, removed };
+  
+  console.log('Comparison result:', {
+    added: added.length,
+    modified: modified.length,
+    removed: removed.length,
+    modifiedDetails: modified.map(item => ({
+      id: item.id,
+      name: item.name,
+      type: item.type,
+      changes: {
+        previous: previousMap.get(item.id),
+        current: item
+      }
+    }))
+  });
+  
+  return result;
 }
 
 // Initialize tracking data
@@ -329,6 +447,19 @@ async function updateTrackingData(): Promise<void> {
   try {
     const elements = await collectDesignSystemElements();
     
+    // Log current elements for debugging
+    console.log('Current elements:', elements.length);
+    
+    // Get previous data for comparison
+    const previousData = getStoredTrackingData();
+    if (previousData) {
+      console.log('Previous elements:', previousData.elements.length);
+      
+      // Compare and log changes
+      const changes = compareElements(previousData.elements, elements);
+      console.log('Changes before saving:', changes);
+    }
+    
     // Save to shared plugin data
     const trackingData = {
       timestamp: Date.now(),
@@ -346,6 +477,54 @@ async function updateTrackingData(): Promise<void> {
     figma.ui.postMessage({
       type: 'error',
       message: 'Failed to update tracking data: ' + (error instanceof Error ? error.message : String(error))
+    });
+  }
+}
+
+// Scan and compare with debug logging
+async function scanAndCompare(): Promise<void> {
+  try {
+    // Get current elements
+    const currentElements = await collectDesignSystemElements();
+    console.log('Current elements in scan:', currentElements.length);
+    
+    // Get stored elements
+    const storedData = getStoredTrackingData();
+    
+    if (!storedData) {
+      console.log('No stored data found');
+      figma.ui.postMessage({ 
+        type: 'scanComplete', 
+        count: currentElements.length,
+        hasChanges: false
+      });
+      return;
+    }
+    
+    console.log('Stored elements in scan:', storedData.elements.length);
+    
+    // Compare current vs stored elements
+    const changes = compareElements(storedData.elements, currentElements);
+    
+    // Log changes before sending to UI
+    console.log('Changes to be sent to UI:', {
+      added: changes.added.length,
+      modified: changes.modified.length,
+      removed: changes.removed.length
+    });
+    
+    // Send results to UI
+    figma.ui.postMessage({
+      type: 'changes',
+      changes: changes,
+      timestamp: Date.now(),
+      hasChanges: changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0
+    });
+  } catch (error) {
+    console.error('Error scanning for changes:', error);
+    figma.ui.postMessage({
+      type: 'error',
+      message: 'Failed to scan for changes: ' + (error instanceof Error ? error.message : String(error))
     });
   }
 }

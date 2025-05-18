@@ -378,6 +378,14 @@
     function renderMainScreen(changes, timestamp, hasChanges) {
       const date = formatDate(timestamp);
       
+      // Log changes for debugging
+      console.log('Rendering main screen with changes:', {
+        hasChanges,
+        added: changes.added.length,
+        modified: changes.modified.length,
+        removed: changes.removed.length
+      });
+      
       return `
         <div class="content-container">
           <div class="section">
