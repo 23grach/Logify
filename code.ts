@@ -33,6 +33,26 @@ interface PluginMessage {
   [key: string]: any;
 }
 
+// Plugin namespace for shared data storage
+const PLUGIN_NAMESPACE = 'changelog_tracker';
+const TRACKING_DATA_KEY = 'trackingData';
+
+// Helper functions for shared data storage
+function getStoredTrackingData(): TrackingData | null {
+  const storedDataStr = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY);
+  if (!storedDataStr) return null;
+  try {
+    return JSON.parse(storedDataStr) as TrackingData;
+  } catch (error) {
+    console.error('Error parsing stored data:', error);
+    return null;
+  }
+}
+
+function setStoredTrackingData(data: TrackingData): void {
+  figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY, JSON.stringify(data));
+}
+
 // Main entry point
   figma.showUI(__html__, { width: 400, height: 500 });
 
@@ -40,7 +60,7 @@ interface PluginMessage {
 async function initializePlugin(): Promise<void> {
   try {
     // Check if we have existing tracking data
-    const storedData = await figma.clientStorage.getAsync('trackingData') as TrackingData | null;
+    const storedData = getStoredTrackingData();
     
     if (!storedData) {
       // First time use - show initialization screen
@@ -222,7 +242,7 @@ async function scanAndCompare(): Promise<void> {
     const currentElements = await collectDesignSystemElements();
     
     // Get stored elements
-    const storedData = await figma.clientStorage.getAsync('trackingData') as TrackingData | null;
+    const storedData = getStoredTrackingData();
     
     if (!storedData) {
       // No stored data - send total count message
@@ -283,11 +303,12 @@ async function initializeTracking(): Promise<void> {
   try {
     const elements = await collectDesignSystemElements();
   
-    // Save to client storage
-    await figma.clientStorage.setAsync('trackingData', {
+    // Save to shared plugin data
+    const trackingData = {
       timestamp: Date.now(),
       elements: elements
-    });
+    };
+    setStoredTrackingData(trackingData);
     
     // Notify UI
     figma.ui.postMessage({ 
@@ -308,11 +329,12 @@ async function updateTrackingData(): Promise<void> {
   try {
     const elements = await collectDesignSystemElements();
     
-    // Save to client storage
-    await figma.clientStorage.setAsync('trackingData', {
+    // Save to shared plugin data
+    const trackingData = {
       timestamp: Date.now(),
       elements: elements
-    });
+    };
+    setStoredTrackingData(trackingData);
     
     // Notify UI
     figma.ui.postMessage({ 
@@ -548,7 +570,7 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
       figma.notify('No changes to add to Figma', { error: true });
     }
   } else if (msg.type === 'viewRecords') {
-    const storedData = await figma.clientStorage.getAsync('trackingData') as TrackingData | null;
+    const storedData = getStoredTrackingData();
     if (storedData) {
       figma.ui.postMessage({
         type: 'records',
