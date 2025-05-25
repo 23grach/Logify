@@ -211,6 +211,37 @@
       background-color: #FFEBEE;
       color: #C62828;
     }
+
+    .progress-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      max-width: 200px;
+      margin-top: 16px;
+    }
+    
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background-color: #E0E0E0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background-color: #0D99FF;
+      transition: width 0.3s ease;
+      border-radius: 4px;
+    }
+    
+    .progress-text {
+      font-size: 12px;
+      font-weight: 500;
+      color: #666666;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -452,12 +483,20 @@
       `;
     }
     
-    // Render loading screen
-    function renderLoadingScreen(message = 'Processing...') {
+    // Render loading screen with progress
+    function renderLoadingScreen(message = 'Processing...', progress = null) {
       return `
         <div class="center-message">
           <div class="loading-spinner"></div>
           <div class="message-text">${message}</div>
+          ${progress !== null ? `
+            <div class="progress-container">
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: ${progress}%"></div>
+              </div>
+              <div class="progress-text">${progress}%</div>
+            </div>
+          ` : ''}
         </div>
       `;
     }
@@ -474,6 +513,19 @@
     
     // Track the current changes data
     let currentChanges = null;
+    let refreshTimeout = null;
+    
+    // Debounced refresh function
+    function debouncedRefresh() {
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+      
+      refreshTimeout = setTimeout(() => {
+        renderUI(renderLoadingScreen('Scanning for changes...'));
+        parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+      }, 300);
+    }
     
     // Set up event listeners for buttons
     function setupEventListeners() {
@@ -517,8 +569,7 @@
       const refreshButton = document.getElementById('refresh-button');
       if (refreshButton) {
         refreshButton.addEventListener('click', () => {
-          renderUI(renderLoadingScreen('Scanning for changes...'));
-          parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+          debouncedRefresh();
         });
       }
       
@@ -581,11 +632,9 @@
           break;
           
         case 'addedToFigma':
-          // Show success and refresh
-          renderUI(renderLoadingScreen('Added to Figma. Refreshing...'));
-          setTimeout(() => {
-            parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
-          }, 1000);
+          // Reset current changes and show no changes state
+          currentChanges = { added: [], modified: [], removed: [] };
+          renderUI(renderMainScreen(currentChanges, Date.now(), false));
           break;
           
         case 'updated':
@@ -597,6 +646,11 @@
         case 'error':
           // Show error screen
           renderUI(renderErrorScreen(message.message));
+          break;
+          
+        case 'progress':
+          // Show progress update
+          renderUI(renderLoadingScreen(message.message, message.progress));
           break;
           
         default:
