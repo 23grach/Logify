@@ -510,7 +510,7 @@ function serializeExtendedNodeProperties(sceneNode: SceneNode): {
       height: sceneNode.height,
       x: sceneNode.x,
       y: sceneNode.y,
-      rotation: sceneNode.rotation,
+      rotation: 'rotation' in sceneNode ? sceneNode.rotation : undefined,
       constraints: 'constraints' in sceneNode ? sceneNode.constraints : undefined,
       cornerRadius: 'cornerRadius' in sceneNode ? sceneNode.cornerRadius : undefined,
       topLeftRadius: 'topLeftRadius' in sceneNode ? sceneNode.topLeftRadius : undefined,
@@ -758,6 +758,7 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       // Note: Variables API might not be available in all Figma versions
       if (typeof figma.variables !== 'undefined') {
         const localVariableCollections = await figma.variables.getLocalVariableCollectionsAsync();
+        const currentTime = Date.now();
         
         for (const collection of localVariableCollections) {
           elements.push({
@@ -765,7 +766,7 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
             name: collection.name,
             type: 'variableCollection',
             key: collection.key,
-            description: collection.description,
+            description: 'description' in collection ? (collection as any).description : undefined,
             variantProperties: null,
             variantPropertiesHash: undefined,
             parentName: undefined,
@@ -812,6 +813,7 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       // Continue without variables - they might not be supported in this Figma version
     }
 
+    const stylesCurrentTime = Date.now();
     for (const style of localStyles) {
       const styleProps = serializeBaseStyleProperties(style);
       let elementType = 'unknownStyle';
@@ -820,7 +822,6 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       else if (style.type === 'EFFECT') elementType = 'effectStyle';
       else if (style.type === 'GRID') elementType = 'gridStyle';
       
-      const currentTime = Date.now();
       elements.push({
         id: style.id,
         name: style.name,
@@ -830,8 +831,8 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
         variantProperties: null, // Styles don't have variant properties - null is correct per interface
         variantPropertiesHash: undefined, // Should be undefined when no variant properties exist
         parentName: undefined, // Styles don't have parent names in this context
-        modifiedAt: currentTime, // Will be updated later in compareElements if element exists
-        updatedAt: currentTime,
+        modifiedAt: stylesCurrentTime, // Will be updated later in compareElements if element exists
+        updatedAt: stylesCurrentTime,
         ...styleProps
       });
     }

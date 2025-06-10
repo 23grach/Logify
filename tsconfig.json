@@ -5,7 +5,7 @@
       "es6"
     ],
     "allowJs": true,
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "esModuleInterop": false,
     "allowSyntheticDefaultImports": false,
     "strict": true,
@@ -14,11 +14,16 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
+    "noEmit": false,
+    "outDir": "./",
     "jsx": "react"
   },
   "include": [
-    "**/*.ts",
-    "tests/**/*.ts"
+    "code.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "tests"
   ]
 }

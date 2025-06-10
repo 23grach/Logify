@@ -3,7 +3,7 @@
 // Mock Figma API
 const mockFigma = {
   root: {
-    children: [],
+    children: [] as any[],
     getSharedPluginData: jest.fn(),
     setSharedPluginData: jest.fn(),
   },
