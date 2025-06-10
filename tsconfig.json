@@ -1,18 +1,24 @@
 {
   "compilerOptions": {
     "target": "es6",
-    "lib": ["es6", "dom"],
-    "typeRoots": ["./node_modules/@types", "./node_modules/@figma"],
+    "lib": [
+      "es6"
+    ],
+    "allowJs": true,
+    "skipLibCheck": false,
+    "esModuleInterop": false,
+    "allowSyntheticDefaultImports": false,
     "strict": true,
-    "outDir": "./",
-    "moduleResolution": "node",
-    "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": true,
-    "noImplicitThis": true,
-    "noImplicitReturns": true,
-    "skipLibCheck": true
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react"
   },
-  "include": ["code.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "**/*.ts",
+    "tests/**/*.ts"
+  ]
 }

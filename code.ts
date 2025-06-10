@@ -11,7 +11,7 @@
 interface DesignSystemElement {
   id: string;
   name: string;
-  type: string; // e.g., 'component', 'componentSet', 'textStyle', 'colorStyle', 'variable'
+  type: string; // e.g., 'component', 'componentSet', 'textStyle', 'colorStyle', 'variable', 'variableCollection'
   key?: string;
   description?: string;
   variantProperties?: { [property: string]: string } | null; // For display in Figma entry
@@ -33,6 +33,26 @@ interface DesignSystemElement {
   
   childrenIds?: string[]; // Direct children IDs, if applicable for Frame-like nodes (Component, ComponentSet, Frame, Group, Instance)
   structureHash?: string; // Hash of the node's own significant structure + children structure hashes, if it has children
+
+  // Extended visual properties hashes
+  layoutHash?: string; // Auto-layout properties (layoutMode, spacing, padding, etc.)
+  geometryHash?: string; // Size, position, constraints, corner radius
+  appearanceHash?: string; // Opacity, blend mode, visibility
+  borderHash?: string; // Border radius, stroke alignment, stroke caps
+  
+  // Text-specific properties hash (for text nodes and text styles)
+  typographyHash?: string; // Font weight, letter spacing, line height, alignment
+  
+  // Variable-related hashes
+  variableUsageHash?: string; // Which variables are used and how
+  variableDefinitionHash?: string; // For variable collections and variables
+  
+  // Prototyping and interaction hashes
+  interactionHash?: string; // Prototyping connections and interactions
+  
+  // Component-specific advanced hashes
+  instanceOverridesHash?: string; // For instances - what overrides are applied
+  exposedPropertiesHash?: string; // What properties are exposed from this component
 }
 
 interface TrackingData {
@@ -83,7 +103,7 @@ function validateDesignSystemElement(element: any): element is DesignSystemEleme
          typeof element.type === 'string' &&
          (element.key === undefined || typeof element.key === 'string') &&
          (element.description === undefined || typeof element.description === 'string') &&
-         (element.variantPropertiesHash === null || element.variantPropertiesHash === undefined || typeof element.variantPropertiesHash === 'string') &&
+         (element.variantPropertiesHash === undefined || typeof element.variantPropertiesHash === 'string') &&
          (element.parentName === undefined || typeof element.parentName === 'string') &&
          (element.modifiedAt === undefined || typeof element.modifiedAt === 'number') &&
          (element.updatedAt === undefined || typeof element.updatedAt === 'number');
@@ -107,7 +127,7 @@ function validateChanges(changes: any): changes is Changes {
 }
 
 // Helper function to compress data for storage (shorter property names)
-function compressDataForStorage(data: TrackingData): any {
+function compressDataForStorage(data: TrackingData): Record<string, unknown> {
   return {
     t: data.timestamp, // timestamp -> t
     e: data.elements.map(element => ({
@@ -127,33 +147,57 @@ function compressDataForStorage(data: TrackingData): any {
       ph: element.propertiesHash, // propertiesHash -> ph
       ch: element.componentPropertiesHash, // componentPropertiesHash -> ch
       ci: element.childrenIds, // childrenIds -> ci
-      st: element.structureHash // structureHash -> st
+      st: element.structureHash, // structureHash -> st
+      
+      // Extended properties
+      lh: element.layoutHash, // layoutHash -> lh
+      gh: element.geometryHash, // geometryHash -> gh
+      ah: element.appearanceHash, // appearanceHash -> ah
+      bh: element.borderHash, // borderHash -> bh
+      th: element.typographyHash, // typographyHash -> th
+      vu: element.variableUsageHash, // variableUsageHash -> vu
+      vd: element.variableDefinitionHash, // variableDefinitionHash -> vd
+      ih: element.interactionHash, // interactionHash -> ih
+      io: element.instanceOverridesHash, // instanceOverridesHash -> io
+      ep: element.exposedPropertiesHash // exposedPropertiesHash -> ep
     }))
   };
 }
 
 // Helper function to decompress data from storage
-function decompressDataFromStorage(compressedData: any): TrackingData {
+function decompressDataFromStorage(compressedData: Record<string, unknown>): TrackingData {
   return {
-    timestamp: compressedData.t,
-    elements: compressedData.e.map((element: any) => ({
-      id: element.i,
-      name: element.n,
-      type: element.ty,
-      key: element.k,
-      description: element.d,
-      variantProperties: element.vp,
-      variantPropertiesHash: element.vh,
-      parentName: element.pn,
-      modifiedAt: element.ma,
-      updatedAt: element.ua,
-      fillsHash: element.fh,
-      strokesHash: element.sh,
-      effectsHash: element.eh,
-      propertiesHash: element.ph,
-      componentPropertiesHash: element.ch,
-      childrenIds: element.ci,
-      structureHash: element.st
+    timestamp: compressedData.t as number,
+    elements: (compressedData.e as Array<Record<string, unknown>>).map((element) => ({
+      id: element.i as string,
+      name: element.n as string,
+      type: element.ty as string,
+      key: element.k as string | undefined,
+      description: element.d as string | undefined,
+      variantProperties: element.vp as { [property: string]: string } | null,
+      variantPropertiesHash: element.vh as string | undefined,
+      parentName: element.pn as string | undefined,
+      modifiedAt: element.ma as number | undefined,
+      updatedAt: element.ua as number | undefined,
+      fillsHash: element.fh as string | undefined,
+      strokesHash: element.sh as string | undefined,
+      effectsHash: element.eh as string | undefined,
+      propertiesHash: element.ph as string | undefined,
+      componentPropertiesHash: element.ch as string | undefined,
+      childrenIds: element.ci as string[] | undefined,
+      structureHash: element.st as string | undefined,
+      
+      // Extended properties
+      layoutHash: element.lh as string | undefined,
+      geometryHash: element.gh as string | undefined,
+      appearanceHash: element.ah as string | undefined,
+      borderHash: element.bh as string | undefined,
+      typographyHash: element.th as string | undefined,
+      variableUsageHash: element.vu as string | undefined,
+      variableDefinitionHash: element.vd as string | undefined,
+      interactionHash: element.ih as string | undefined,
+      instanceOverridesHash: element.io as string | undefined,
+      exposedPropertiesHash: element.ep as string | undefined
     }))
   };
 }
@@ -215,9 +259,6 @@ function setStoredTrackingData(data: TrackingData): void {
     console.log('setStoredTrackingData: Compressed data length:', dataStr.length);
     console.log('setStoredTrackingData: Original vs compressed ratio:', (dataStr.length / JSON.stringify(data).length * 100).toFixed(1) + '%');
     
-    // Clear any existing chunks first
-    clearStoredTrackingData();
-    
     // Split data into chunks
     const chunks: string[] = [];
     for (let i = 0; i < dataStr.length; i += CHUNK_SIZE_LIMIT) {
@@ -226,25 +267,85 @@ function setStoredTrackingData(data: TrackingData): void {
     
     console.log('setStoredTrackingData: Split into', chunks.length, 'chunks');
     
-    // Store each chunk
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkKey = TRACKING_DATA_KEY + '_chunk_' + i;
-      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, chunkKey, chunks[i]);
-      console.log('setStoredTrackingData: Stored chunk', i, 'with length:', chunks[i].length);
+    // Use temporary keys for safe storage
+    const tempChunkKeys: string[] = [];
+    const tempMetaKey = TRACKING_DATA_KEY + '_temp_meta';
+    
+    try {
+      // Store each chunk with temporary keys
+      for (let i = 0; i < chunks.length; i++) {
+        const tempChunkKey = TRACKING_DATA_KEY + '_temp_chunk_' + i;
+        tempChunkKeys.push(tempChunkKey);
+        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey, chunks[i]);
+        console.log('setStoredTrackingData: Stored temp chunk', i, 'with length:', chunks[i].length);
+        
+        // Verify chunk was saved correctly
+        const savedChunk = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey);
+        if (savedChunk !== chunks[i]) {
+          throw new Error(`Chunk ${i} verification failed`);
+        }
+      }
+      
+      // Store temporary metadata
+      const metadata = {
+        chunkCount: chunks.length,
+        timestamp: data.timestamp,
+        totalLength: dataStr.length
+      };
+      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey, JSON.stringify(metadata));
+      
+      // Verify metadata was saved correctly
+      const savedMetadata = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey);
+      if (savedMetadata !== JSON.stringify(metadata)) {
+        throw new Error('Metadata verification failed');
+      }
+      
+      // All chunks saved successfully, now replace the old data
+      clearStoredTrackingData();
+      
+      // Move temp chunks to final keys
+      for (let i = 0; i < chunks.length; i++) {
+        const finalChunkKey = TRACKING_DATA_KEY + '_chunk_' + i;
+        const tempChunkKey = tempChunkKeys[i];
+        const chunkData = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey);
+        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, finalChunkKey, chunkData);
+        // Clear temp chunk
+        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey, '');
+      }
+      
+      // Move temp metadata to final key
+      const metadataData = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey);
+      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta', metadataData);
+      // Clear temp metadata
+      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey, '');
+      
+      console.log('setStoredTrackingData: Success. Data saved in', chunks.length, 'chunks');
+      
+    } catch (saveError) {
+      // Rollback: clear any temporary data that might have been saved
+      console.error('setStoredTrackingData: Error during save, rolling back:', saveError);
+      
+      for (const tempKey of tempChunkKeys) {
+        try {
+          figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempKey, '');
+        } catch (rollbackError) {
+          console.error('setStoredTrackingData: Error during rollback:', rollbackError);
+        }
+      }
+      
+      try {
+        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey, '');
+      } catch (rollbackError) {
+        console.error('setStoredTrackingData: Error during metadata rollback:', rollbackError);
+      }
+      
+      throw saveError; // Re-throw to be caught by outer try-catch
     }
     
-    // Store metadata about chunks
-    const metadata = {
-      chunkCount: chunks.length,
-      timestamp: data.timestamp,
-      totalLength: dataStr.length
-    };
-    figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta', JSON.stringify(metadata));
-    
-    console.log('setStoredTrackingData: Success. Data saved in', chunks.length, 'chunks');
   } catch (error) {
     console.error('setStoredTrackingData: CRITICAL ERROR during chunked storage:', error);
     figma.notify('Critical error: Failed to save tracking data.', { error: true });
+    throw error; // Re-throw for caller to handle
   }
 }
 
@@ -303,14 +404,25 @@ function initializePlugin(): void {
 // Helper function to serialize node structure (now returns a hash)
 function calculateStructureHash(node: SceneNode): string {
   try {
-    // Basic node info for structure definition
+    // Basic node info for structure definition (excluding id to avoid false changes)
     const nodeInfo: any = {
-      id: node.id, // Keep id for reference if needed, but it won't affect hash of children structure itself
       name: node.name,
       type: node.type,
       // Potentially other structurally significant properties that are not visual
       // e.g., layoutMode, primaryAxisSizingMode, counterAxisSizingMode for auto-layout frames
     };
+    
+    // Add layout properties for frames that support auto-layout
+    if ('layoutMode' in node) {
+      const layoutNode = node as FrameNode | ComponentNode | ComponentSetNode | InstanceNode;
+      nodeInfo.layoutMode = layoutNode.layoutMode;
+      if (layoutNode.layoutMode !== 'NONE') {
+        nodeInfo.primaryAxisSizingMode = layoutNode.primaryAxisSizingMode;
+        nodeInfo.counterAxisSizingMode = layoutNode.counterAxisSizingMode;
+        nodeInfo.itemSpacing = layoutNode.itemSpacing;
+      }
+    }
+    
     if ('children' in node && (node as FrameNode | ComponentNode | ComponentSetNode | InstanceNode).children.length > 0) {
       nodeInfo.children = (node as FrameNode | ComponentNode | ComponentSetNode | InstanceNode).children.map(child => calculateStructureHash(child));
     }
@@ -357,6 +469,122 @@ function serializeBaseStyleProperties(style: BaseStyle): {
   }
 }
 
+// Extended serialization for comprehensive property tracking
+function serializeExtendedNodeProperties(sceneNode: SceneNode): {
+  layoutHash?: string;
+  geometryHash?: string;
+  appearanceHash?: string;
+  borderHash?: string;
+  typographyHash?: string;
+  variableUsageHash?: string;
+  interactionHash?: string;
+  instanceOverridesHash?: string;
+  exposedPropertiesHash?: string;
+} {
+  const result: Record<string, string> = {};
+  
+  try {
+    // Layout properties (auto-layout)
+    if ('layoutMode' in sceneNode) {
+      const layoutNode = sceneNode as FrameNode | ComponentNode | ComponentSetNode | InstanceNode;
+      const layoutProps = {
+        layoutMode: layoutNode.layoutMode,
+        primaryAxisSizingMode: layoutNode.primaryAxisSizingMode,
+        counterAxisSizingMode: layoutNode.counterAxisSizingMode,
+        primaryAxisAlignItems: layoutNode.primaryAxisAlignItems,
+        counterAxisAlignItems: layoutNode.counterAxisAlignItems,
+        itemSpacing: layoutNode.itemSpacing,
+        paddingTop: layoutNode.paddingTop,
+        paddingRight: layoutNode.paddingRight,
+        paddingBottom: layoutNode.paddingBottom,
+        paddingLeft: layoutNode.paddingLeft,
+        layoutWrap: 'layoutWrap' in layoutNode ? layoutNode.layoutWrap : undefined,
+        layoutGrow: 'layoutGrow' in layoutNode ? layoutNode.layoutGrow : undefined
+      };
+      result.layoutHash = simpleHash(JSON.stringify(layoutProps));
+    }
+    
+    // Geometry properties
+    const geometryProps = {
+      width: sceneNode.width,
+      height: sceneNode.height,
+      x: sceneNode.x,
+      y: sceneNode.y,
+      rotation: sceneNode.rotation,
+      constraints: 'constraints' in sceneNode ? sceneNode.constraints : undefined,
+      cornerRadius: 'cornerRadius' in sceneNode ? sceneNode.cornerRadius : undefined,
+      topLeftRadius: 'topLeftRadius' in sceneNode ? sceneNode.topLeftRadius : undefined,
+      topRightRadius: 'topRightRadius' in sceneNode ? sceneNode.topRightRadius : undefined,
+      bottomLeftRadius: 'bottomLeftRadius' in sceneNode ? sceneNode.bottomLeftRadius : undefined,
+      bottomRightRadius: 'bottomRightRadius' in sceneNode ? sceneNode.bottomRightRadius : undefined
+    };
+    result.geometryHash = simpleHash(JSON.stringify(geometryProps));
+    
+    // Appearance properties
+    const appearanceProps = {
+      opacity: 'opacity' in sceneNode ? sceneNode.opacity : undefined,
+      blendMode: 'blendMode' in sceneNode ? sceneNode.blendMode : undefined,
+      isMask: 'isMask' in sceneNode ? sceneNode.isMask : undefined,
+      visible: sceneNode.visible,
+      locked: sceneNode.locked
+    };
+    result.appearanceHash = simpleHash(JSON.stringify(appearanceProps));
+    
+    // Border properties
+    if ('strokes' in sceneNode || 'strokeWeight' in sceneNode) {
+      const borderProps = {
+        strokeWeight: 'strokeWeight' in sceneNode ? sceneNode.strokeWeight : undefined,
+        strokeAlign: 'strokeAlign' in sceneNode ? sceneNode.strokeAlign : undefined,
+        strokeCap: 'strokeCap' in sceneNode ? sceneNode.strokeCap : undefined,
+        strokeJoin: 'strokeJoin' in sceneNode ? sceneNode.strokeJoin : undefined,
+        strokeMiterLimit: 'strokeMiterLimit' in sceneNode ? sceneNode.strokeMiterLimit : undefined,
+        dashPattern: 'dashPattern' in sceneNode ? sceneNode.dashPattern : undefined
+      };
+      result.borderHash = simpleHash(JSON.stringify(borderProps));
+    }
+    
+    // Typography properties (for text nodes)
+    if (sceneNode.type === 'TEXT') {
+      const textNode = sceneNode as TextNode;
+      const typographyProps = {
+        fontName: textNode.fontName,
+        fontSize: textNode.fontSize,
+        fontWeight: 'fontWeight' in textNode ? textNode.fontWeight : undefined,
+        letterSpacing: textNode.letterSpacing,
+        lineHeight: textNode.lineHeight,
+        paragraphIndent: textNode.paragraphIndent,
+        paragraphSpacing: textNode.paragraphSpacing,
+        textAlignHorizontal: textNode.textAlignHorizontal,
+        textAlignVertical: textNode.textAlignVertical,
+        textCase: textNode.textCase,
+        textDecoration: textNode.textDecoration,
+        textStyleId: textNode.textStyleId,
+        autoRename: textNode.autoRename
+      };
+      result.typographyHash = simpleHash(JSON.stringify(typographyProps));
+    }
+    
+    // Instance overrides (for instance nodes)
+    if (sceneNode.type === 'INSTANCE') {
+      const instanceNode = sceneNode as InstanceNode;
+      if (instanceNode.overrides && instanceNode.overrides.length > 0) {
+        result.instanceOverridesHash = simpleHash(JSON.stringify(instanceNode.overrides));
+      }
+      if (instanceNode.componentProperties && Object.keys(instanceNode.componentProperties).length > 0) {
+        result.exposedPropertiesHash = simpleHash(JSON.stringify(instanceNode.componentProperties));
+      }
+    }
+    
+    // TODO: Variable usage tracking when Figma API supports it
+    // TODO: Interaction/prototyping tracking when Figma API supports it
+    
+  } catch (error) {
+    console.error(`Error in serializeExtendedNodeProperties for node ${sceneNode.id}:`, error);
+  }
+  
+  return result;
+}
+
 // MODIFIED: Renamed and adapted for SceneNodes only
 function serializeSceneNodePropertiesAndStructure(sceneNode: SceneNode): {
   fillsHash?: string;
@@ -366,8 +594,18 @@ function serializeSceneNodePropertiesAndStructure(sceneNode: SceneNode): {
   componentPropertiesHash?: string; // For ComponentNode/ComponentSetNode definitions
   childrenIds?: string[];
   structureHash?: string;
+  // Extended properties
+  layoutHash?: string;
+  geometryHash?: string;
+  appearanceHash?: string;
+  borderHash?: string;
+  typographyHash?: string;
+  variableUsageHash?: string;
+  interactionHash?: string;
+  instanceOverridesHash?: string;
+  exposedPropertiesHash?: string;
 } {
-  const result: any = {};
+  const result: Record<string, unknown> = {};
   try {
     if ('fills' in sceneNode && sceneNode.fills && (sceneNode.fills as readonly Paint[]).length > 0) {
       result.fillsHash = simpleHash(JSON.stringify(sceneNode.fills));
@@ -378,6 +616,10 @@ function serializeSceneNodePropertiesAndStructure(sceneNode: SceneNode): {
     if ('effects' in sceneNode && sceneNode.effects && (sceneNode.effects as readonly Effect[]).length > 0) {
       result.effectsHash = simpleHash(JSON.stringify(sceneNode.effects));
     }
+    
+    // Get extended properties
+    const extendedProps = serializeExtendedNodeProperties(sceneNode);
+    Object.assign(result, extendedProps);
 
     if (sceneNode.type === 'COMPONENT_SET') {
       const compSet = sceneNode as ComponentSetNode;
@@ -397,12 +639,15 @@ function serializeSceneNodePropertiesAndStructure(sceneNode: SceneNode): {
         // The error states "Can only get definitions of a component set or non-variant component".
         // A non-variant component is one whose parent is not a ComponentSetNode.
         try {
-            if (compNode.componentPropertyDefinitions && Object.keys(compNode.componentPropertyDefinitions).length > 0) {
+            // Additional check to ensure the property exists before accessing it
+            if ('componentPropertyDefinitions' in compNode && 
+                compNode.componentPropertyDefinitions && 
+                Object.keys(compNode.componentPropertyDefinitions).length > 0) {
                 result.componentPropertiesHash = simpleHash(JSON.stringify(compNode.componentPropertyDefinitions));
             }
         } catch (e) {
-            // This catch might be redundant if the condition above is perfect, but good for safety.
             console.warn(`Could not access componentPropertyDefinitions for COMPONENT node ${compNode.id} (parent type: ${compNode.parent?.type}). Error: ${e}`);
+            // Don't throw the error, just skip this property
         }
       }
       // For all components (base or variant), capture children if they exist
@@ -463,6 +708,7 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       for (const node of componentsOnPage) { // Explicitly iterate ComponentNode[]
         const visualProps = serializeSceneNodePropertiesAndStructure(node);
         const variantProps = ('variantProperties' in node && node.variantProperties) ? node.variantProperties : null;
+        const currentTime = Date.now();
         elements.push({
           id: node.id,
           name: node.name,
@@ -472,24 +718,26 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
           variantProperties: variantProps,
           variantPropertiesHash: variantProps ? simpleHash(JSON.stringify(variantProps)) : undefined,
           parentName: node.parent?.type === 'COMPONENT_SET' ? node.parent.name : undefined,
-          modifiedAt: Date.now(), 
-          updatedAt: Date.now(),  
+          modifiedAt: currentTime, // Will be updated later in compareElements if element exists
+          updatedAt: currentTime,  
           ...visualProps
         });
       }
 
       for (const node of componentSetsOnPage) { // Explicitly iterate ComponentSetNode[]
         const visualProps = serializeSceneNodePropertiesAndStructure(node);
+        const currentTime = Date.now();
         elements.push({
           id: node.id,
           name: node.name,
           type: 'componentSet', // Correct type for ComponentSetNode
           key: node.key,
           description: node.description,
-          variantProperties: null, // ComponentSet itself doesn't have variantProperties in the same way a variant does
+          variantProperties: null, // ComponentSet itself doesn't have variantProperties - null is correct per interface
+          variantPropertiesHash: undefined, // Should be undefined when no variant properties exist
           parentName: undefined, // ComponentSet typically doesn't have a relevant parentName in this context
-          modifiedAt: Date.now(),
-          updatedAt: Date.now(),
+          modifiedAt: currentTime, // Will be updated later in compareElements if element exists
+          updatedAt: currentTime,
           ...visualProps
         });
       }
@@ -504,6 +752,66 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       ...(await figma.getLocalGridStylesAsync()),
     ];
 
+    // Collect variables and variable collections (if available)
+    figma.ui.postMessage({ type: 'progress', message: 'Processing variables...', progress: 85 });
+    try {
+      // Note: Variables API might not be available in all Figma versions
+      if (typeof figma.variables !== 'undefined') {
+        const localVariableCollections = await figma.variables.getLocalVariableCollectionsAsync();
+        
+        for (const collection of localVariableCollections) {
+          elements.push({
+            id: collection.id,
+            name: collection.name,
+            type: 'variableCollection',
+            key: collection.key,
+            description: collection.description,
+            variantProperties: null,
+            variantPropertiesHash: undefined,
+            parentName: undefined,
+            modifiedAt: currentTime,
+            updatedAt: currentTime,
+            variableDefinitionHash: simpleHash(JSON.stringify({
+              modes: collection.modes,
+              defaultModeId: collection.defaultModeId,
+              remote: collection.remote,
+              hiddenFromPublishing: collection.hiddenFromPublishing
+            }))
+          });
+          
+          // Get variables from this collection
+          const variablesInCollection = await figma.variables.getLocalVariablesAsync();
+          const collectionVariables = variablesInCollection.filter(v => v.variableCollectionId === collection.id);
+          
+          for (const variable of collectionVariables) {
+            elements.push({
+              id: variable.id,
+              name: variable.name,
+              type: 'variable',
+              key: variable.key,
+              description: variable.description,
+              variantProperties: null,
+              variantPropertiesHash: undefined,
+              parentName: collection.name,
+              modifiedAt: currentTime,
+              updatedAt: currentTime,
+              variableDefinitionHash: simpleHash(JSON.stringify({
+                resolvedType: variable.resolvedType,
+                valuesByMode: variable.valuesByMode,
+                remote: variable.remote,
+                hiddenFromPublishing: variable.hiddenFromPublishing,
+                scopes: variable.scopes,
+                codeSyntax: variable.codeSyntax
+              }))
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Variables API not available or error accessing variables:', error);
+      // Continue without variables - they might not be supported in this Figma version
+    }
+
     for (const style of localStyles) {
       const styleProps = serializeBaseStyleProperties(style);
       let elementType = 'unknownStyle';
@@ -512,17 +820,18 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       else if (style.type === 'EFFECT') elementType = 'effectStyle';
       else if (style.type === 'GRID') elementType = 'gridStyle';
       
+      const currentTime = Date.now();
       elements.push({
         id: style.id,
         name: style.name,
         type: elementType, 
         key: style.key,
         description: style.description,
-        variantProperties: null, // Styles don't have variant properties
-        variantPropertiesHash: undefined, // Should be undefined, not null
+        variantProperties: null, // Styles don't have variant properties - null is correct per interface
+        variantPropertiesHash: undefined, // Should be undefined when no variant properties exist
         parentName: undefined, // Styles don't have parent names in this context
-        modifiedAt: Date.now(),
-        updatedAt: Date.now(),
+        modifiedAt: currentTime, // Will be updated later in compareElements if element exists
+        updatedAt: currentTime,
         ...styleProps
       });
     }
@@ -560,14 +869,28 @@ function compareElements(previous: DesignSystemElement[], current: DesignSystemE
       variantPropsHashChanged: prevItem.variantPropertiesHash !== item.variantPropertiesHash, // Compare hash for actual change detection
       parentNameChanged: prevItem.parentName !== item.parentName,
       
+      // Basic visual properties
       fillsHashChanged: prevItem.fillsHash !== item.fillsHash,
       strokesHashChanged: prevItem.strokesHash !== item.strokesHash,
       effectsHashChanged: prevItem.effectsHash !== item.effectsHash,
       propertiesHashChanged: prevItem.propertiesHash !== item.propertiesHash, 
       componentPropertiesHashChanged: prevItem.componentPropertiesHash !== item.componentPropertiesHash, 
       
+      // Structure
       childrenIdsChanged: JSON.stringify(prevItem.childrenIds) !== JSON.stringify(item.childrenIds), 
-      structureHashChanged: prevItem.structureHash !== item.structureHash
+      structureHashChanged: prevItem.structureHash !== item.structureHash,
+      
+      // Extended properties
+      layoutHashChanged: prevItem.layoutHash !== item.layoutHash,
+      geometryHashChanged: prevItem.geometryHash !== item.geometryHash,
+      appearanceHashChanged: prevItem.appearanceHash !== item.appearanceHash,
+      borderHashChanged: prevItem.borderHash !== item.borderHash,
+      typographyHashChanged: prevItem.typographyHash !== item.typographyHash,
+      variableUsageHashChanged: prevItem.variableUsageHash !== item.variableUsageHash,
+      variableDefinitionHashChanged: prevItem.variableDefinitionHash !== item.variableDefinitionHash,
+      interactionHashChanged: prevItem.interactionHash !== item.interactionHash,
+      instanceOverridesHashChanged: prevItem.instanceOverridesHash !== item.instanceOverridesHash,
+      exposedPropertiesHashChanged: prevItem.exposedPropertiesHash !== item.exposedPropertiesHash
     };
     
     const hasChanges = (() => {
@@ -580,6 +903,8 @@ function compareElements(previous: DesignSystemElement[], current: DesignSystemE
     })();
     
     if (hasChanges) {
+      // Element has changes - keep original modifiedAt time but update updatedAt
+      item.modifiedAt = prevItem.modifiedAt || item.modifiedAt; // Preserve original modification time
       console.log('Element changes detected:', {
         id: item.id,
         name: item.name,
@@ -595,9 +920,23 @@ function compareElements(previous: DesignSystemElement[], current: DesignSystemE
         // previousFull: prevItem, // Uncomment for very detailed debugging
         // currentFull: item      // Uncomment for very detailed debugging
       });
+    } else {
+      // Element unchanged - preserve both timestamps
+      item.modifiedAt = prevItem.modifiedAt;
+      item.updatedAt = prevItem.updatedAt;
     }
     
     return hasChanges;
+  });
+  
+  // For unchanged elements, also preserve their timestamps
+  current.forEach(item => {
+    const prevItem = previousMap.get(item.id);
+    if (prevItem && !processedIds.has(item.id)) {
+      // This element exists but wasn't processed as modified
+      item.modifiedAt = prevItem.modifiedAt;
+      item.updatedAt = prevItem.updatedAt;
+    }
   });
   
   const added = current.filter(item => !processedIds.has(item.id) && !previousMap.has(item.id));
@@ -948,36 +1287,96 @@ async function addToFigma(changes: Changes): Promise<void> {
 
 // Handle UI messages
 figma.ui.onmessage = async (msg: PluginMessage) => {
-  if (msg.type === 'initialize') {
-    await initializeTracking();
-  } else if (msg.type === 'refresh') {
-    await scanAndCompare();
-  } else if (msg.type === 'addToFigma') {
-    if (msg.changes) {
-      // Validate changes data before processing
-      if (!validateChanges(msg.changes)) {
-        console.error('Invalid changes data received');
-        figma.notify('Invalid data format', { error: true });
-        return;
+  try {
+    if (msg.type === 'initialize') {
+      try {
+        await initializeTracking();
+      } catch (error) {
+        console.error('Initialize tracking failed:', error);
+        figma.ui.postMessage({
+          type: 'error',
+          message: 'Failed to initialize tracking: ' + (error instanceof Error ? error.message : String(error))
+        });
+        figma.notify('Initialization failed', { error: true });
       }
-      await addToFigma(msg.changes);
+    } else if (msg.type === 'refresh') {
+      try {
+        await scanAndCompare();
+      } catch (error) {
+        console.error('Scan and compare failed:', error);
+        figma.ui.postMessage({
+          type: 'error',
+          message: 'Failed to scan for changes: ' + (error instanceof Error ? error.message : String(error))
+        });
+        figma.notify('Scan failed', { error: true });
+      }
+    } else if (msg.type === 'addToFigma') {
+      if (msg.changes) {
+        // Validate changes data before processing
+        if (!validateChanges(msg.changes)) {
+          console.error('Invalid changes data received');
+          figma.ui.postMessage({
+            type: 'error',
+            message: 'Invalid data format'
+          });
+          figma.notify('Invalid data format', { error: true });
+          return;
+        }
+        try {
+          await addToFigma(msg.changes);
+        } catch (error) {
+          console.error('Add to Figma failed:', error);
+          figma.ui.postMessage({
+            type: 'error',
+            message: 'Failed to add to Figma: ' + (error instanceof Error ? error.message : String(error))
+          });
+          figma.notify('Failed to add to Figma', { error: true });
+        }
+      } else {
+        figma.ui.postMessage({
+          type: 'error',
+          message: 'No changes to add to Figma'
+        });
+        figma.notify('No changes to add to Figma', { error: true });
+      }
+    } else if (msg.type === 'viewRecords') {
+      try {
+        const storedData = getStoredTrackingData();
+        if (storedData) {
+          figma.ui.postMessage({
+            type: 'records',
+            elements: storedData.elements,
+            timestamp: storedData.timestamp
+          });
+        } else {
+          figma.ui.postMessage({
+            type: 'error',
+            message: 'No records found'
+          });
+        }
+      } catch (error) {
+        console.error('View records failed:', error);
+        figma.ui.postMessage({
+          type: 'error',
+          message: 'Failed to retrieve records: ' + (error instanceof Error ? error.message : String(error))
+        });
+        figma.notify('Failed to retrieve records', { error: true });
+      }
     } else {
-      figma.notify('No changes to add to Figma', { error: true });
-    }
-  } else if (msg.type === 'viewRecords') {
-    const storedData = getStoredTrackingData();
-    if (storedData) {
-      figma.ui.postMessage({
-        type: 'records',
-        elements: storedData.elements,
-        timestamp: storedData.timestamp
-      });
-    } else {
+      console.warn('Unknown message type:', msg.type);
       figma.ui.postMessage({
         type: 'error',
-        message: 'No records found'
+        message: 'Unknown command: ' + msg.type
       });
     }
+  } catch (error) {
+    // Catch-all for unexpected errors in message handling
+    console.error('Unexpected error in message handler:', error);
+    figma.ui.postMessage({
+      type: 'error',
+      message: 'Unexpected error occurred: ' + (error instanceof Error ? error.message : String(error))
+    });
+    figma.notify('Unexpected error occurred', { error: true });
   }
 };
 
