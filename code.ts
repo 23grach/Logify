@@ -818,7 +818,7 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
       const styleProps = serializeBaseStyleProperties(style);
       let elementType = 'unknownStyle';
       if (style.type === 'TEXT') elementType = 'textStyle';
-      else if (style.type === 'PAINT') elementType = 'paintStyle';
+      else if (style.type === 'PAINT') elementType = 'colorStyle';
       else if (style.type === 'EFFECT') elementType = 'effectStyle';
       else if (style.type === 'GRID') elementType = 'gridStyle';
       
@@ -1087,6 +1087,7 @@ function formatElementForDisplay(element: DesignSystemElement): string {
       formattedType = 'Text Style';
       break;
     case 'colorStyle':
+    case 'paintStyle': // Legacy support for old data
       formattedType = 'Color Style';
       break;
     case 'effectStyle':
