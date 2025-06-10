@@ -566,6 +566,7 @@
         
         <div class="actions-container">
           <button class="button button-primary" id="add-to-figma-button" ${!hasChanges ? 'disabled' : ''}>Add to Figma</button>
+          <button class="button" id="skip-version-button" ${!hasChanges ? 'disabled' : ''}>Skip Version</button>
           <button class="button" id="refresh-button">Refresh</button>
           <button class="button" id="view-records-button">View Records</button>
         </div>
@@ -678,6 +679,21 @@
           }
         });
       }
+      
+      // Skip Version button
+      const skipVersionButton = document.getElementById('skip-version-button');
+      if (skipVersionButton) {
+        skipVersionButton.addEventListener('click', () => {
+          if (currentChanges) {
+            renderUI(renderLoadingScreen('Skipping version...'));
+            parent.postMessage({ 
+              pluginMessage: { 
+                type: 'skipVersion'
+              } 
+            }, '*');
+          }
+        });
+      }
     }
     
     // Helper to render UI and set up event listeners
@@ -722,6 +738,12 @@
           break;
           
         case 'addedToFigma':
+          // Reset current changes and show no changes state
+          currentChanges = { added: [], modified: [], removed: [] };
+          renderUI(renderMainScreen(currentChanges, Date.now(), false));
+          break;
+          
+        case 'versionSkipped':
           // Reset current changes and show no changes state
           currentChanges = { added: [], modified: [], removed: [] };
           renderUI(renderMainScreen(currentChanges, Date.now(), false));

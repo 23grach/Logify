@@ -1340,6 +1340,22 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
         });
         figma.notify('No changes to add to Figma', { error: true });
       }
+    } else if (msg.type === 'skipVersion') {
+      try {
+        // Update tracking data without adding to Figma (skip this version)
+        await updateTrackingData(false);
+        
+        // Notify UI that version was skipped
+        figma.ui.postMessage({ type: 'versionSkipped' });
+        figma.notify('Version skipped - changes will not be logged');
+      } catch (error) {
+        console.error('Skip version failed:', error);
+        figma.ui.postMessage({
+          type: 'error',
+          message: 'Failed to skip version: ' + (error instanceof Error ? error.message : String(error))
+        });
+        figma.notify('Failed to skip version', { error: true });
+      }
     } else if (msg.type === 'viewRecords') {
       try {
         const storedData = getStoredTrackingData();
