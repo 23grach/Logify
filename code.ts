@@ -1,58 +1,40 @@
 /// <reference types="@figma/plugin-typings" />
 
-// This file holds the main code for plugins. Code in this file has access to
-// the *figma document* via the figma global object.
-// You can access browser APIs in the <script> tag inside "ui.html" which has a
-// full browser environment (See https://www.figma.com/plugin-docs/how-plugins-run).
+/**
+ * Figma Plugin: Logify - Design System Tracker
+ * Tracks changes to design system elements and creates changelog entries
+ */
 
-// This plugin tracks changes to design system elements (components, styles, variables)
+// ======================== TYPES & INTERFACES ========================
 
-// Define types for our plugin
 interface DesignSystemElement {
   id: string;
   name: string;
-  type: string; // e.g., 'component', 'componentSet', 'textStyle', 'colorStyle', 'variable', 'variableCollection'
+  type: 'component' | 'componentSet' | 'textStyle' | 'colorStyle' | 'variable' | 'variableCollection';
   key?: string;
   description?: string;
-  variantProperties?: { [property: string]: string } | null; // For display in Figma entry
-  variantPropertiesHash?: string; // Hash of variantProperties for comparison
-  parentName?: string; // For components that are part of a ComponentSet
+  variantProperties?: { [property: string]: string } | null;
+  variantPropertiesHash?: string;
+  parentName?: string;
   modifiedAt?: number;
   updatedAt?: number;
-
-  // Hashes for visual and structural properties
   fillsHash?: string;
   strokesHash?: string;
   effectsHash?: string;
-  
-  // Hash of defining properties for TextNodes, BaseStyles, or InstanceNodes (mainComponentId + overrides)
-  propertiesHash?: string; 
-  
-  // Hash of component property definitions for ComponentNode or ComponentSetNode
-  componentPropertiesHash?: string; // For ComponentNode/Set definitions OR InstanceNode property overrides hash
-  
-  childrenIds?: string[]; // Direct children IDs, if applicable for Frame-like nodes (Component, ComponentSet, Frame, Group, Instance)
-  structureHash?: string; // Hash of the node's own significant structure + children structure hashes, if it has children
-
-  // Extended visual properties hashes
-  layoutHash?: string; // Auto-layout properties (layoutMode, spacing, padding, etc.)
-  geometryHash?: string; // Size, position, constraints, corner radius
-  appearanceHash?: string; // Opacity, blend mode, visibility
-  borderHash?: string; // Border radius, stroke alignment, stroke caps
-  
-  // Text-specific properties hash (for text nodes and text styles)
-  typographyHash?: string; // Font weight, letter spacing, line height, alignment
-  
-  // Variable-related hashes
-  variableUsageHash?: string; // Which variables are used and how
-  variableDefinitionHash?: string; // For variable collections and variables
-  
-  // Prototyping and interaction hashes
-  interactionHash?: string; // Prototyping connections and interactions
-  
-  // Component-specific advanced hashes
-  instanceOverridesHash?: string; // For instances - what overrides are applied
-  exposedPropertiesHash?: string; // What properties are exposed from this component
+  propertiesHash?: string;
+  componentPropertiesHash?: string;
+  childrenIds?: string[];
+  structureHash?: string;
+  layoutHash?: string;
+  geometryHash?: string;
+  appearanceHash?: string;
+  borderHash?: string;
+  typographyHash?: string;
+  variableUsageHash?: string;
+  variableDefinitionHash?: string;
+  interactionHash?: string;
+  instanceOverridesHash?: string;
+  exposedPropertiesHash?: string;
 }
 
 interface TrackingData {
@@ -71,1205 +53,966 @@ interface PluginMessage {
   [key: string]: any;
 }
 
-// Plugin namespace for shared data storage
+// ======================== CONSTANTS ========================
+
 const PLUGIN_NAMESPACE = 'changelog_tracker';
 const TRACKING_DATA_KEY = 'trackingData';
-const CHUNK_SIZE_LIMIT = 90000; // 90KB to stay safely under 100KB limit
-
-// Performance constants
-const BATCH_SIZE = 50;
-const YIELD_INTERVAL = 0;
-
-// UI constants
-const LOGIFY_PAGE_NAME = "🖹Logify";
+const CHUNK_SIZE_LIMIT = 90000;
+const LOGIFY_PAGE_NAME = "🖹 Logify";
 const CHANGELOG_CONTAINER_NAME = "Changelog Container";
 const ENTRY_NAME_PREFIX = "Logify Entry";
 
-// Simple hash function (using a common algorithm like djb2)
+// ======================== UTILITY FUNCTIONS ========================
+
+/**
+ * Simple hash function (djb2 algorithm)
+ */
 function simpleHash(str: string): string {
   let hash = 5381;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
-    hash = ((hash << 5) + hash) + char; /* hash * 33 + char */
+    hash = ((hash << 5) + hash) + char;
   }
-  return hash.toString(16); // Return as hex string
+  return hash.toString(16);
 }
 
-// Validation functions for data integrity
-function validateDesignSystemElement(element: any): element is DesignSystemElement {
-  return element &&
-         typeof element.id === 'string' &&
-         typeof element.name === 'string' &&
-         typeof element.type === 'string' &&
-         (element.key === undefined || typeof element.key === 'string') &&
-         (element.description === undefined || typeof element.description === 'string') &&
-         (element.variantPropertiesHash === undefined || typeof element.variantPropertiesHash === 'string') &&
-         (element.parentName === undefined || typeof element.parentName === 'string') &&
-         (element.modifiedAt === undefined || typeof element.modifiedAt === 'number') &&
-         (element.updatedAt === undefined || typeof element.updatedAt === 'number');
+/**
+ * Generic hash function for objects
+ */
+function hashObject(obj: unknown): string {
+  if (!obj) return '';
+  return simpleHash(JSON.stringify(obj));
 }
 
-function validateTrackingData(data: any): data is TrackingData {
-  return data &&
-         typeof data.timestamp === 'number' &&
-         Array.isArray(data.elements) &&
-         data.elements.every(validateDesignSystemElement);
+// ======================== VALIDATION FUNCTIONS ========================
+
+function validateDesignSystemElement(element: unknown): element is DesignSystemElement {
+  return element !== null &&
+         typeof element === 'object' &&
+         element !== undefined &&
+         'id' in element &&
+         'name' in element &&
+         'type' in element &&
+         typeof (element as Record<string, unknown>).id === 'string' &&
+         typeof (element as Record<string, unknown>).name === 'string' &&
+         typeof (element as Record<string, unknown>).type === 'string';
 }
 
-function validateChanges(changes: any): changes is Changes {
-  return changes &&
-         Array.isArray(changes.added) &&
-         Array.isArray(changes.modified) &&
-         Array.isArray(changes.removed) &&
-         changes.added.every(validateDesignSystemElement) &&
-         changes.modified.every(validateDesignSystemElement) &&
-         changes.removed.every(validateDesignSystemElement);
+function validateTrackingData(data: unknown): data is TrackingData {
+  return data !== null &&
+         data !== undefined &&
+         typeof data === 'object' &&
+         'timestamp' in data &&
+         'elements' in data &&
+         typeof (data as Record<string, unknown>).timestamp === 'number' &&
+         Array.isArray((data as Record<string, unknown>).elements) &&
+         ((data as Record<string, unknown>).elements as unknown[]).every(validateDesignSystemElement);
 }
 
-// Helper function to compress data for storage (shorter property names)
+function validateChanges(changes: unknown): changes is Changes {
+  return changes !== null &&
+         changes !== undefined &&
+         typeof changes === 'object' &&
+         'added' in changes &&
+         'modified' in changes &&
+         'removed' in changes &&
+         Array.isArray((changes as Record<string, unknown>).added) &&
+         Array.isArray((changes as Record<string, unknown>).modified) &&
+         Array.isArray((changes as Record<string, unknown>).removed) &&
+         ((changes as Record<string, unknown>).added as unknown[]).every(validateDesignSystemElement) &&
+         ((changes as Record<string, unknown>).modified as unknown[]).every(validateDesignSystemElement) &&
+         ((changes as Record<string, unknown>).removed as unknown[]).every(validateDesignSystemElement);
+}
+
+// ======================== DATA COMPRESSION ========================
+
+/**
+ * Compress data for storage with shorter property names
+ */
 function compressDataForStorage(data: TrackingData): Record<string, unknown> {
+  const compressionMap = {
+    timestamp: 't', id: 'i', name: 'n', type: 'ty', key: 'k', description: 'd',
+    variantProperties: 'vp', variantPropertiesHash: 'vh', parentName: 'pn',
+    modifiedAt: 'ma', updatedAt: 'ua', fillsHash: 'fh', strokesHash: 'sh',
+    effectsHash: 'eh', propertiesHash: 'ph', componentPropertiesHash: 'ch',
+    childrenIds: 'ci', structureHash: 'st', layoutHash: 'lh', geometryHash: 'gh',
+    appearanceHash: 'ah', borderHash: 'bh', typographyHash: 'th',
+    variableUsageHash: 'vu', variableDefinitionHash: 'vd', interactionHash: 'ih',
+    instanceOverridesHash: 'io', exposedPropertiesHash: 'ep'
+  };
+
   return {
-    t: data.timestamp, // timestamp -> t
-    e: data.elements.map(element => ({
-      i: element.id, // id -> i
-      n: element.name, // name -> n
-      ty: element.type, // type -> ty
-      k: element.key, // key -> k
-      d: element.description, // description -> d
-      vp: element.variantProperties, // variantProperties -> vp
-      vh: element.variantPropertiesHash, // variantPropertiesHash -> vh
-      pn: element.parentName, // parentName -> pn
-      ma: element.modifiedAt, // modifiedAt -> ma
-      ua: element.updatedAt, // updatedAt -> ua
-      fh: element.fillsHash, // fillsHash -> fh
-      sh: element.strokesHash, // strokesHash -> sh
-      eh: element.effectsHash, // effectsHash -> eh
-      ph: element.propertiesHash, // propertiesHash -> ph
-      ch: element.componentPropertiesHash, // componentPropertiesHash -> ch
-      ci: element.childrenIds, // childrenIds -> ci
-      st: element.structureHash, // structureHash -> st
-      
-      // Extended properties
-      lh: element.layoutHash, // layoutHash -> lh
-      gh: element.geometryHash, // geometryHash -> gh
-      ah: element.appearanceHash, // appearanceHash -> ah
-      bh: element.borderHash, // borderHash -> bh
-      th: element.typographyHash, // typographyHash -> th
-      vu: element.variableUsageHash, // variableUsageHash -> vu
-      vd: element.variableDefinitionHash, // variableDefinitionHash -> vd
-      ih: element.interactionHash, // interactionHash -> ih
-      io: element.instanceOverridesHash, // instanceOverridesHash -> io
-      ep: element.exposedPropertiesHash // exposedPropertiesHash -> ep
-    }))
+    t: data.timestamp,
+    e: data.elements.map(element => {
+      const compressed: Record<string, any> = {};
+      Object.entries(element).forEach(([key, value]) => {
+        const compressedKey = compressionMap[key as keyof typeof compressionMap] || key;
+        compressed[compressedKey] = value;
+      });
+      return compressed;
+    })
   };
 }
 
-// Helper function to decompress data from storage
+/**
+ * Decompress data from storage
+ */
 function decompressDataFromStorage(compressedData: Record<string, unknown>): TrackingData {
+  const decompressionMap = {
+    t: 'timestamp', i: 'id', n: 'name', ty: 'type', k: 'key', d: 'description',
+    vp: 'variantProperties', vh: 'variantPropertiesHash', pn: 'parentName',
+    ma: 'modifiedAt', ua: 'updatedAt', fh: 'fillsHash', sh: 'strokesHash',
+    eh: 'effectsHash', ph: 'propertiesHash', ch: 'componentPropertiesHash',
+    ci: 'childrenIds', st: 'structureHash', lh: 'layoutHash', gh: 'geometryHash',
+    ah: 'appearanceHash', bh: 'borderHash', th: 'typographyHash',
+    vu: 'variableUsageHash', vd: 'variableDefinitionHash', ih: 'interactionHash',
+    io: 'instanceOverridesHash', ep: 'exposedPropertiesHash'
+  };
+
   return {
     timestamp: compressedData.t as number,
-    elements: (compressedData.e as Array<Record<string, unknown>>).map((element) => ({
-      id: element.i as string,
-      name: element.n as string,
-      type: element.ty as string,
-      key: element.k as string | undefined,
-      description: element.d as string | undefined,
-      variantProperties: element.vp as { [property: string]: string } | null,
-      variantPropertiesHash: element.vh as string | undefined,
-      parentName: element.pn as string | undefined,
-      modifiedAt: element.ma as number | undefined,
-      updatedAt: element.ua as number | undefined,
-      fillsHash: element.fh as string | undefined,
-      strokesHash: element.sh as string | undefined,
-      effectsHash: element.eh as string | undefined,
-      propertiesHash: element.ph as string | undefined,
-      componentPropertiesHash: element.ch as string | undefined,
-      childrenIds: element.ci as string[] | undefined,
-      structureHash: element.st as string | undefined,
-      
-      // Extended properties
-      layoutHash: element.lh as string | undefined,
-      geometryHash: element.gh as string | undefined,
-      appearanceHash: element.ah as string | undefined,
-      borderHash: element.bh as string | undefined,
-      typographyHash: element.th as string | undefined,
-      variableUsageHash: element.vu as string | undefined,
-      variableDefinitionHash: element.vd as string | undefined,
-      interactionHash: element.ih as string | undefined,
-      instanceOverridesHash: element.io as string | undefined,
-      exposedPropertiesHash: element.ep as string | undefined
-    }))
+    elements: (compressedData.e as Array<Record<string, unknown>>).map((element) => {
+      const decompressed: Record<string, any> = {};
+      Object.entries(element).forEach(([key, value]) => {
+        const decompressedKey = decompressionMap[key as keyof typeof decompressionMap] || key;
+        decompressed[decompressedKey] = value;
+      });
+      return decompressed as DesignSystemElement;
+    })
   };
 }
 
-// Helper functions for chunked shared data storage (maintains sync between users)
+// ======================== STORAGE FUNCTIONS ========================
+
+/**
+ * Get stored tracking data with chunked support
+ */
 function getStoredTrackingData(): TrackingData | null {
   try {
-    // First, get the metadata to know how many chunks exist
     const metadataStr = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta');
     
     if (!metadataStr || metadataStr.trim() === '') {
-      console.log('getStoredTrackingData: No metadata found.');
+      console.log('No metadata found');
       return null;
     }
     
     const metadata = JSON.parse(metadataStr);
-    console.log('getStoredTrackingData: Found metadata with', metadata.chunkCount, 'chunks');
-    
-    // Reconstruct the data from chunks
     let reconstructedDataStr = '';
+    
     for (let i = 0; i < metadata.chunkCount; i++) {
       const chunkKey = TRACKING_DATA_KEY + '_chunk_' + i;
       const chunkData = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, chunkKey);
       if (!chunkData) {
-        console.error('getStoredTrackingData: Missing chunk', i);
+        console.error('Missing chunk', i);
         return null;
       }
       reconstructedDataStr += chunkData;
     }
     
-    console.log('getStoredTrackingData: Reconstructed data length:', reconstructedDataStr.length);
-    
     const compressedData = JSON.parse(reconstructedDataStr);
     const data = decompressDataFromStorage(compressedData);
-    console.log('getStoredTrackingData: Parsed data timestamp:', data.timestamp);
-    console.log('getStoredTrackingData: Parsed elements count:', data.elements.length);
     
-    // Validate data integrity
     if (!validateTrackingData(data)) {
-      console.warn('getStoredTrackingData: Invalid tracking data format detected, attempting to reset...');
+      console.warn('Invalid tracking data format detected');
       clearStoredTrackingData();
-      console.log('getStoredTrackingData: Invalid data cleared.');
       return null;
     }
     
-    return data as TrackingData;
+    return data;
   } catch (error) {
-    console.error('getStoredTrackingData: Error retrieving stored data:', error);
+    console.error('Error retrieving stored data:', error);
     clearStoredTrackingData();
-    console.log('getStoredTrackingData: Corrupted data cleared.');
     return null;
   }
 }
 
+/**
+ * Store tracking data with chunked support
+ */
 function setStoredTrackingData(data: TrackingData): void {
   try {
+    clearStoredTrackingData();
+    
     const compressedData = compressDataForStorage(data);
     const dataStr = JSON.stringify(compressedData);
-    console.log('setStoredTrackingData: Compressed data length:', dataStr.length);
-    console.log('setStoredTrackingData: Original vs compressed ratio:', (dataStr.length / JSON.stringify(data).length * 100).toFixed(1) + '%');
     
-    // Split data into chunks
-    const chunks: string[] = [];
-    for (let i = 0; i < dataStr.length; i += CHUNK_SIZE_LIMIT) {
-      chunks.push(dataStr.substring(i, i + CHUNK_SIZE_LIMIT));
-    }
-    
-    console.log('setStoredTrackingData: Split into', chunks.length, 'chunks');
-    
-    // Use temporary keys for safe storage
-    const tempChunkKeys: string[] = [];
-    const tempMetaKey = TRACKING_DATA_KEY + '_temp_meta';
-    
-    try {
-      // Store each chunk with temporary keys
-      for (let i = 0; i < chunks.length; i++) {
-        const tempChunkKey = TRACKING_DATA_KEY + '_temp_chunk_' + i;
-        tempChunkKeys.push(tempChunkKey);
-        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey, chunks[i]);
-        console.log('setStoredTrackingData: Stored temp chunk', i, 'with length:', chunks[i].length);
-        
-        // Verify chunk was saved correctly
-        const savedChunk = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey);
-        if (savedChunk !== chunks[i]) {
-          throw new Error(`Chunk ${i} verification failed`);
-        }
+    if (dataStr.length <= CHUNK_SIZE_LIMIT) {
+      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_chunk_0', dataStr);
+      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta', 
+        JSON.stringify({ chunkCount: 1 }));
+    } else {
+      const chunks = [];
+      for (let i = 0; i < dataStr.length; i += CHUNK_SIZE_LIMIT) {
+        chunks.push(dataStr.slice(i, i + CHUNK_SIZE_LIMIT));
       }
       
-      // Store temporary metadata
-      const metadata = {
-        chunkCount: chunks.length,
-        timestamp: data.timestamp,
-        totalLength: dataStr.length
-      };
-      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey, JSON.stringify(metadata));
+      chunks.forEach((chunk, index) => {
+        const chunkKey = TRACKING_DATA_KEY + '_chunk_' + index;
+        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, chunkKey, chunk);
+      });
       
-      // Verify metadata was saved correctly
-      const savedMetadata = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey);
-      if (savedMetadata !== JSON.stringify(metadata)) {
-        throw new Error('Metadata verification failed');
-      }
-      
-      // All chunks saved successfully, now replace the old data
-      clearStoredTrackingData();
-      
-      // Move temp chunks to final keys
-      for (let i = 0; i < chunks.length; i++) {
-        const finalChunkKey = TRACKING_DATA_KEY + '_chunk_' + i;
-        const tempChunkKey = tempChunkKeys[i];
-        const chunkData = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey);
-        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, finalChunkKey, chunkData);
-        // Clear temp chunk
-        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempChunkKey, '');
-      }
-      
-      // Move temp metadata to final key
-      const metadataData = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey);
-      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta', metadataData);
-      // Clear temp metadata
-      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey, '');
-      
-      console.log('setStoredTrackingData: Success. Data saved in', chunks.length, 'chunks');
-      
-    } catch (saveError) {
-      // Rollback: clear any temporary data that might have been saved
-      console.error('setStoredTrackingData: Error during save, rolling back:', saveError);
-      
-      for (const tempKey of tempChunkKeys) {
-        try {
-          figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempKey, '');
-        } catch (rollbackError) {
-          console.error('setStoredTrackingData: Error during rollback:', rollbackError);
-        }
-      }
-      
-      try {
-        figma.root.setSharedPluginData(PLUGIN_NAMESPACE, tempMetaKey, '');
-      } catch (rollbackError) {
-        console.error('setStoredTrackingData: Error during metadata rollback:', rollbackError);
-      }
-      
-      throw saveError; // Re-throw to be caught by outer try-catch
+      figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta', 
+        JSON.stringify({ chunkCount: chunks.length }));
     }
     
   } catch (error) {
-    console.error('setStoredTrackingData: CRITICAL ERROR during chunked storage:', error);
-    figma.notify('Critical error: Failed to save tracking data.', { error: true });
-    throw error; // Re-throw for caller to handle
+    console.error('Error storing data:', error);
+    throw new Error('Failed to store tracking data: ' + error);
   }
 }
 
+/**
+ * Clear stored tracking data
+ */
 function clearStoredTrackingData(): void {
   try {
-    // Get existing metadata to know how many chunks to clear
     const metadataStr = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta');
     
     if (metadataStr && metadataStr.trim() !== '') {
       const metadata = JSON.parse(metadataStr);
-      
-      // Clear all chunks
       for (let i = 0; i < metadata.chunkCount; i++) {
         const chunkKey = TRACKING_DATA_KEY + '_chunk_' + i;
         figma.root.setSharedPluginData(PLUGIN_NAMESPACE, chunkKey, '');
       }
     }
     
-    // Clear metadata
     figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta', '');
-    
-    // Also clear any potential old single-entry data
-    figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY, '');
-    
-    console.log('clearStoredTrackingData: All chunks and metadata cleared');
   } catch (error) {
-    console.error('clearStoredTrackingData: Error clearing data:', error);
+    console.error('Error clearing stored data:', error);
   }
 }
 
-// Main entry point
-figma.showUI(__html__, { width: 400, height: 500 });
+// ======================== SERIALIZATION FUNCTIONS ========================
 
-// Initialize plugin
+/**
+ * Serialize paint properties
+ */
+function serializePaintProperties(paints: readonly Paint[]): string {
+  if (!paints || paints.length === 0) return '';
+  
+  const paintData = paints.map(paint => ({
+    type: paint.type,
+    visible: paint.visible,
+    opacity: paint.opacity,
+    ...(paint.type === 'SOLID' && { color: paint.color }),
+    ...(paint.type === 'GRADIENT_LINEAR' && { 
+      gradientStops: paint.gradientStops,
+      gradientTransform: paint.gradientTransform 
+    }),
+    ...(paint.type === 'IMAGE' && { imageHash: paint.imageHash }),
+  }));
+  
+  return hashObject(paintData);
+}
+
+/**
+ * Serialize stroke properties
+ */
+function serializeStrokeProperties(node: SceneNode): string {
+  if (!('strokes' in node)) return '';
+  
+  const strokeData = {
+    strokes: node.strokes,
+    strokeWeight: 'strokeWeight' in node ? node.strokeWeight : undefined,
+    strokeAlign: 'strokeAlign' in node ? node.strokeAlign : undefined,
+    strokeCap: 'strokeCap' in node ? node.strokeCap : undefined,
+    strokeJoin: 'strokeJoin' in node ? node.strokeJoin : undefined,
+    strokeMiterLimit: 'strokeMiterLimit' in node ? node.strokeMiterLimit : undefined,
+    dashPattern: 'dashPattern' in node ? node.dashPattern : undefined,
+  };
+  
+  return hashObject(strokeData);
+}
+
+/**
+ * Serialize effect properties
+ */
+function serializeEffectProperties(effects: readonly Effect[]): string {
+  if (!effects || effects.length === 0) return '';
+  
+  const effectData = effects.map(effect => ({
+    type: effect.type,
+    visible: effect.visible,
+    ...(effect.type === 'DROP_SHADOW' && {
+      color: effect.color,
+      offset: effect.offset,
+      radius: effect.radius,
+      spread: effect.spread,
+      blendMode: effect.blendMode,
+    }),
+    ...((effect.type === 'LAYER_BLUR' || effect.type === 'BACKGROUND_BLUR') && { 
+      radius: effect.radius 
+    }),
+  }));
+  
+  return hashObject(effectData);
+}
+
+/**
+ * Serialize layout properties
+ */
+function serializeLayoutProperties(node: SceneNode): string {
+  if (!('layoutMode' in node)) return '';
+  
+  const layoutData = {
+    layoutMode: node.layoutMode,
+    primaryAxisSizingMode: 'primaryAxisSizingMode' in node ? node.primaryAxisSizingMode : undefined,
+    counterAxisSizingMode: 'counterAxisSizingMode' in node ? node.counterAxisSizingMode : undefined,
+    primaryAxisAlignItems: 'primaryAxisAlignItems' in node ? node.primaryAxisAlignItems : undefined,
+    counterAxisAlignItems: 'counterAxisAlignItems' in node ? node.counterAxisAlignItems : undefined,
+    itemSpacing: 'itemSpacing' in node ? node.itemSpacing : undefined,
+    paddingLeft: 'paddingLeft' in node ? node.paddingLeft : undefined,
+    paddingRight: 'paddingRight' in node ? node.paddingRight : undefined,
+    paddingTop: 'paddingTop' in node ? node.paddingTop : undefined,
+    paddingBottom: 'paddingBottom' in node ? node.paddingBottom : undefined,
+  };
+  
+  return hashObject(layoutData);
+}
+
+/**
+ * Serialize geometry properties
+ */
+function serializeGeometryProperties(node: SceneNode): string {
+  const geometryData = {
+    width: node.width,
+    height: node.height,
+    x: node.x,
+    y: node.y,
+    rotation: 'rotation' in node ? node.rotation : undefined,
+    constraints: 'constraints' in node ? node.constraints : undefined,
+    cornerRadius: 'cornerRadius' in node ? node.cornerRadius : undefined,
+    topLeftRadius: 'topLeftRadius' in node ? node.topLeftRadius : undefined,
+    topRightRadius: 'topRightRadius' in node ? node.topRightRadius : undefined,
+    bottomLeftRadius: 'bottomLeftRadius' in node ? node.bottomLeftRadius : undefined,
+    bottomRightRadius: 'bottomRightRadius' in node ? node.bottomRightRadius : undefined,
+  };
+  
+  return hashObject(geometryData);
+}
+
+/**
+ * Serialize typography properties
+ */
+function serializeTypographyProperties(node: SceneNode): string {
+  if (node.type !== 'TEXT') return '';
+  
+  const textNode = node as TextNode;
+  const typographyData = {
+    characters: textNode.characters,
+    fontSize: textNode.fontSize,
+    fontName: textNode.fontName,
+    fontWeight: textNode.fontWeight,
+    textAlignHorizontal: textNode.textAlignHorizontal,
+    textAlignVertical: textNode.textAlignVertical,
+    textAutoResize: textNode.textAutoResize,
+    textDecoration: textNode.textDecoration,
+    textCase: textNode.textCase,
+    lineHeight: textNode.lineHeight,
+    letterSpacing: textNode.letterSpacing,
+    paragraphIndent: textNode.paragraphIndent,
+    paragraphSpacing: textNode.paragraphSpacing,
+    textStyleId: textNode.textStyleId,
+  };
+  
+  return hashObject(typographyData);
+}
+
+/**
+ * Serialize component properties
+ */
+function serializeComponentProperties(node: ComponentNode | ComponentSetNode): string {
+  const componentData = {
+    description: node.description,
+    documentationLinks: node.documentationLinks,
+    remote: node.remote,
+    key: node.key,
+    ...(node.type === 'COMPONENT' && {
+      variantProperties: (node as ComponentNode).variantProperties,
+    }),
+  };
+  
+  return hashObject(componentData);
+}
+
+/**
+ * Serialize instance properties
+ */
+function serializeInstanceProperties(node: InstanceNode): string {
+  const instanceData = {
+    mainComponent: node.mainComponent ? {
+      id: node.mainComponent.id,
+      name: node.mainComponent.name,
+      key: node.mainComponent.key,
+    } : null,
+    componentProperties: node.componentProperties,
+    overrides: node.overrides,
+  };
+  
+  return hashObject(instanceData);
+}
+
+/**
+ * Serialize variable properties
+ */
+function serializeVariableProperties(variable: Variable): string {
+  const variableData = {
+    name: variable.name,
+    description: variable.description,
+    resolvedType: variable.resolvedType,
+    valuesByMode: variable.valuesByMode,
+    remote: variable.remote,
+    key: variable.key,
+    variableCollectionId: variable.variableCollectionId,
+    scopes: variable.scopes,
+    hiddenFromPublishing: variable.hiddenFromPublishing,
+  };
+  
+  return hashObject(variableData);
+}
+
+/**
+ * Calculate structure hash for a node
+ */
+function calculateStructureHash(node: SceneNode): string {
+  const hasChildren = 'children' in node && node.children.length > 0;
+  if (!hasChildren) return '';
+  
+  const childrenData = (node as any).children.map((child: SceneNode) => ({
+    id: child.id,
+    name: child.name,
+    type: child.type,
+    visible: child.visible,
+  }));
+  
+  return hashObject(childrenData);
+}
+
+/**
+ * Serialize all properties of a scene node
+ */
+function serializeSceneNodeProperties(sceneNode: SceneNode): Partial<DesignSystemElement> {
+  const properties: Partial<DesignSystemElement> = {};
+  
+  // Basic properties
+  properties.fillsHash = 'fills' in sceneNode && sceneNode.fills !== figma.mixed ? serializePaintProperties(sceneNode.fills) : '';
+  properties.strokesHash = serializeStrokeProperties(sceneNode);
+  properties.effectsHash = 'effects' in sceneNode ? serializeEffectProperties(sceneNode.effects) : '';
+  
+  // Extended properties
+  properties.layoutHash = serializeLayoutProperties(sceneNode);
+  properties.geometryHash = serializeGeometryProperties(sceneNode);
+  properties.typographyHash = serializeTypographyProperties(sceneNode);
+  
+  // Type-specific properties
+  if (sceneNode.type === 'COMPONENT' || sceneNode.type === 'COMPONENT_SET') {
+    properties.componentPropertiesHash = serializeComponentProperties(sceneNode as ComponentNode | ComponentSetNode);
+  }
+  
+  if (sceneNode.type === 'INSTANCE') {
+    properties.instanceOverridesHash = serializeInstanceProperties(sceneNode as InstanceNode);
+  }
+  
+  // Structure
+  if ('children' in sceneNode) {
+    properties.childrenIds = sceneNode.children.map(child => child.id);
+    properties.structureHash = calculateStructureHash(sceneNode);
+  }
+  
+  return properties;
+}
+
+/**
+ * Serialize base style properties
+ */
+function serializeBaseStyleProperties(style: BaseStyle): Partial<DesignSystemElement> {
+  const properties: Partial<DesignSystemElement> = {};
+  
+  if (style.type === 'PAINT') {
+    const paintStyle = style as PaintStyle;
+    properties.fillsHash = serializePaintProperties(paintStyle.paints);
+  } else if (style.type === 'EFFECT') {
+    const effectStyle = style as EffectStyle;
+    properties.effectsHash = serializeEffectProperties(effectStyle.effects);
+  } else if (style.type === 'TEXT') {
+    const textStyle = style as TextStyle;
+    const textData = {
+      fontSize: textStyle.fontSize,
+      fontName: textStyle.fontName,
+      textDecoration: textStyle.textDecoration,
+      textCase: textStyle.textCase,
+      lineHeight: textStyle.lineHeight,
+      letterSpacing: textStyle.letterSpacing,
+      paragraphIndent: textStyle.paragraphIndent,
+      paragraphSpacing: textStyle.paragraphSpacing,
+    };
+    properties.typographyHash = hashObject(textData);
+  }
+  
+  return properties;
+}
+
+// ======================== COLLECTION FUNCTIONS ========================
+
+/**
+ * Collect all components from the document
+ */
+async function collectComponents(): Promise<DesignSystemElement[]> {
+  const components: DesignSystemElement[] = [];
+  
+  const documentComponents = figma.root.findAllWithCriteria({ types: ['COMPONENT'] });
+  
+  for (const component of documentComponents) {
+    const element: DesignSystemElement = {
+      id: component.id,
+      name: component.name,
+      type: 'component',
+      key: component.key,
+      description: component.description,
+      parentName: component.parent?.type === 'COMPONENT_SET' ? component.parent.name : undefined,
+      ...serializeSceneNodeProperties(component)
+    };
+    
+    components.push(element);
+  }
+  
+  return components;
+}
+
+/**
+ * Collect all component sets from the document
+ */
+async function collectComponentSets(): Promise<DesignSystemElement[]> {
+  const componentSets: DesignSystemElement[] = [];
+  
+  const documentComponentSets = figma.root.findAllWithCriteria({ types: ['COMPONENT_SET'] });
+  
+  for (const componentSet of documentComponentSets) {
+    const element: DesignSystemElement = {
+      id: componentSet.id,
+      name: componentSet.name,
+      type: 'componentSet',
+      key: componentSet.key,
+      description: componentSet.description,
+      ...serializeSceneNodeProperties(componentSet)
+    };
+    
+    componentSets.push(element);
+  }
+  
+  return componentSets;
+}
+
+/**
+ * Collect all styles from the document
+ */
+async function collectStyles(): Promise<DesignSystemElement[]> {
+  const styles: DesignSystemElement[] = [];
+  
+  // Text styles
+  const textStyles = figma.getLocalTextStyles();
+  for (const style of textStyles) {
+    const element: DesignSystemElement = {
+      id: style.id,
+      name: style.name,
+      type: 'textStyle',
+      key: style.key,
+      description: style.description,
+      ...serializeBaseStyleProperties(style)
+    };
+    styles.push(element);
+  }
+  
+  // Paint styles
+  const paintStyles = figma.getLocalPaintStyles();
+  for (const style of paintStyles) {
+    const element: DesignSystemElement = {
+      id: style.id,
+      name: style.name,
+      type: 'colorStyle',
+      key: style.key,
+      description: style.description,
+      ...serializeBaseStyleProperties(style)
+    };
+    styles.push(element);
+  }
+  
+  // Effect styles
+  const effectStyles = figma.getLocalEffectStyles();
+  for (const style of effectStyles) {
+    const element: DesignSystemElement = {
+      id: style.id,
+      name: style.name,
+      type: 'colorStyle',
+      key: style.key,
+      description: style.description,
+      ...serializeBaseStyleProperties(style)
+    };
+    styles.push(element);
+  }
+  
+  return styles;
+}
+
+/**
+ * Collect all variables from the document
+ */
+async function collectVariables(): Promise<DesignSystemElement[]> {
+  const variables: DesignSystemElement[] = [];
+  
+  // Variable collections
+  const collections = figma.variables.getLocalVariableCollections();
+  for (const collection of collections) {
+    const element: DesignSystemElement = {
+      id: collection.id,
+      name: collection.name,
+      type: 'variableCollection',
+      key: collection.key,
+      variableDefinitionHash: hashObject({
+        name: collection.name,
+        modes: collection.modes,
+        defaultModeId: collection.defaultModeId,
+        remote: collection.remote,
+        hiddenFromPublishing: collection.hiddenFromPublishing,
+      })
+    };
+    variables.push(element);
+  }
+  
+  // Variables
+  const localVariables = figma.variables.getLocalVariables();
+  for (const variable of localVariables) {
+    const element: DesignSystemElement = {
+      id: variable.id,
+      name: variable.name,
+      type: 'variable',
+      key: variable.key,
+      description: variable.description,
+      variableDefinitionHash: serializeVariableProperties(variable)
+    };
+    variables.push(element);
+  }
+  
+  return variables;
+}
+
+/**
+ * Collect all design system elements
+ */
+async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
+  const elements: DesignSystemElement[] = [];
+  
+  // Collect all element types
+  const [components, componentSets, styles, variables] = await Promise.all([
+    collectComponents(),
+    collectComponentSets(),
+    collectStyles(),
+    collectVariables()
+  ]);
+  
+  elements.push(...components, ...componentSets, ...styles, ...variables);
+  
+  return elements;
+}
+
+// ======================== COMPARISON FUNCTIONS ========================
+
+/**
+ * Compare two arrays of elements and return changes
+ */
+function compareElements(previous: DesignSystemElement[], current: DesignSystemElement[]): Changes {
+  const changes: Changes = { added: [], modified: [], removed: [] };
+  
+  const previousMap = new Map(previous.map(el => [el.id, el]));
+  const currentMap = new Map(current.map(el => [el.id, el]));
+  
+  // Find added elements
+  for (const currentElement of current) {
+    if (!previousMap.has(currentElement.id)) {
+      changes.added.push(currentElement);
+    }
+  }
+  
+  // Find removed elements
+  for (const previousElement of previous) {
+    if (!currentMap.has(previousElement.id)) {
+      changes.removed.push(previousElement);
+    }
+  }
+  
+  // Find modified elements
+  for (const currentElement of current) {
+    const previousElement = previousMap.get(currentElement.id);
+    if (previousElement && hasElementChanged(previousElement, currentElement)) {
+      changes.modified.push(currentElement);
+    }
+  }
+  
+  return changes;
+}
+
+/**
+ * Check if an element has changed by comparing hashes
+ */
+function hasElementChanged(previous: DesignSystemElement, current: DesignSystemElement): boolean {
+  const hashFields = [
+    'fillsHash', 'strokesHash', 'effectsHash', 'propertiesHash',
+    'componentPropertiesHash', 'structureHash', 'layoutHash',
+    'geometryHash', 'appearanceHash', 'borderHash', 'typographyHash',
+    'variableUsageHash', 'variableDefinitionHash', 'interactionHash',
+    'instanceOverridesHash', 'exposedPropertiesHash', 'variantPropertiesHash'
+  ];
+  
+  return hashFields.some(field => previous[field as keyof DesignSystemElement] !== current[field as keyof DesignSystemElement]) ||
+         previous.name !== current.name ||
+         previous.description !== current.description;
+}
+
+// ======================== MAIN PLUGIN FUNCTIONS ========================
+
+/**
+ * Initialize plugin
+ */
 function initializePlugin(): void {
+  figma.showUI(__html__, { width: 400, height: 600 });
+}
+
+/**
+ * Initialize tracking
+ */
+async function initializeTracking(): Promise<void> {
   try {
-    // Check if we have existing tracking data
+    const currentElements = await collectDesignSystemElements(); 
     const storedData = getStoredTrackingData();
     
     if (!storedData) {
-      // First time use - show initialization screen
-      figma.ui.postMessage({ type: 'init' });
+      const initialData: TrackingData = {
+        timestamp: Date.now(),
+        elements: currentElements
+      };
+      setStoredTrackingData(initialData);
+      
+      figma.ui.postMessage({
+        type: 'initialized',
+        elementsCount: currentElements.length,
+        isFirstRun: true
+      });
     } else {
-      // Compare current elements with stored elements
-      scanAndCompare();
-    }
-  } catch (error) {
-    console.error('Error initializing plugin:', error);
-    figma.ui.postMessage({ 
-      type: 'error',
-      message: 'Failed to initialize: ' + (error instanceof Error ? error.message : String(error))
-    });
-  }
-}
-
-// Helper function to serialize node structure (now returns a hash)
-function calculateStructureHash(node: SceneNode): string {
-  try {
-    // Basic node info for structure definition (excluding id to avoid false changes)
-    const nodeInfo: any = {
-      name: node.name,
-      type: node.type,
-      // Potentially other structurally significant properties that are not visual
-      // e.g., layoutMode, primaryAxisSizingMode, counterAxisSizingMode for auto-layout frames
-    };
-    
-    // Add layout properties for frames that support auto-layout
-    if ('layoutMode' in node) {
-      const layoutNode = node as FrameNode | ComponentNode | ComponentSetNode | InstanceNode;
-      nodeInfo.layoutMode = layoutNode.layoutMode;
-      if (layoutNode.layoutMode !== 'NONE') {
-        nodeInfo.primaryAxisSizingMode = layoutNode.primaryAxisSizingMode;
-        nodeInfo.counterAxisSizingMode = layoutNode.counterAxisSizingMode;
-        nodeInfo.itemSpacing = layoutNode.itemSpacing;
-      }
-    }
-    
-    if ('children' in node && (node as FrameNode | ComponentNode | ComponentSetNode | InstanceNode).children.length > 0) {
-      nodeInfo.children = (node as FrameNode | ComponentNode | ComponentSetNode | InstanceNode).children.map(child => calculateStructureHash(child));
-    }
-    return simpleHash(JSON.stringify(nodeInfo));
-  } catch (error) {
-    console.error('Error calculating node structure hash for node ' + node.id + ':', error);
-    return 'error_hash'; // Return a consistent error hash
-  }
-}
-
-// NEW: Helper for BaseStyles
-function serializeBaseStyleProperties(style: BaseStyle): {
-  propertiesHash?: string;
-  fillsHash?: string;      // For PaintStyle, can represent its paints
-  effectsHash?: string;    // For EffectStyle, can represent its effects
-} {
-  const result: any = {};
-  try {
-    let definingProperties: any = { baseType: style.type, name: style.name, key: style.key, description: style.description };
-    if (style.type === 'TEXT') {
-      const ts = style as TextStyle;
-      definingProperties = { ...definingProperties, fontName: ts.fontName, fontSize: ts.fontSize, letterSpacing: ts.letterSpacing, lineHeight: ts.lineHeight, paragraphIndent: ts.paragraphIndent, paragraphSpacing: ts.paragraphSpacing, textCase: ts.textCase, textDecoration: ts.textDecoration };
-    } else if (style.type === 'PAINT') {
-      const ps = style as PaintStyle;
-      definingProperties.paints = ps.paints;
-      if (ps.paints && ps.paints.length > 0) {
-        result.fillsHash = simpleHash(JSON.stringify(ps.paints)); 
-      }
-    } else if (style.type === 'EFFECT') {
-      const es = style as EffectStyle;
-      definingProperties.effects = es.effects;
-      if (es.effects && es.effects.length > 0) {
-         result.effectsHash = simpleHash(JSON.stringify(es.effects));
-      }
-    } else if (style.type === 'GRID') {
-      const gs = style as GridStyle;
-      definingProperties.layoutGrids = gs.layoutGrids;
-    }
-    result.propertiesHash = simpleHash(JSON.stringify(definingProperties));
-    return result;
-  } catch (error) {
-    console.error(`Error in serializeBaseStyleProperties for style ${style.id} (${style.type}):`, error);
-    return {};
-  }
-}
-
-// Extended serialization for comprehensive property tracking
-function serializeExtendedNodeProperties(sceneNode: SceneNode): {
-  layoutHash?: string;
-  geometryHash?: string;
-  appearanceHash?: string;
-  borderHash?: string;
-  typographyHash?: string;
-  variableUsageHash?: string;
-  interactionHash?: string;
-  instanceOverridesHash?: string;
-  exposedPropertiesHash?: string;
-} {
-  const result: Record<string, string> = {};
-  
-  try {
-    // Layout properties (auto-layout)
-    if ('layoutMode' in sceneNode) {
-      const layoutNode = sceneNode as FrameNode | ComponentNode | ComponentSetNode | InstanceNode;
-      const layoutProps = {
-        layoutMode: layoutNode.layoutMode,
-        primaryAxisSizingMode: layoutNode.primaryAxisSizingMode,
-        counterAxisSizingMode: layoutNode.counterAxisSizingMode,
-        primaryAxisAlignItems: layoutNode.primaryAxisAlignItems,
-        counterAxisAlignItems: layoutNode.counterAxisAlignItems,
-        itemSpacing: layoutNode.itemSpacing,
-        paddingTop: layoutNode.paddingTop,
-        paddingRight: layoutNode.paddingRight,
-        paddingBottom: layoutNode.paddingBottom,
-        paddingLeft: layoutNode.paddingLeft,
-        layoutWrap: 'layoutWrap' in layoutNode ? layoutNode.layoutWrap : undefined,
-        layoutGrow: 'layoutGrow' in layoutNode ? layoutNode.layoutGrow : undefined
-      };
-      result.layoutHash = simpleHash(JSON.stringify(layoutProps));
-    }
-    
-    // Geometry properties
-    const geometryProps = {
-      width: sceneNode.width,
-      height: sceneNode.height,
-      x: sceneNode.x,
-      y: sceneNode.y,
-      rotation: 'rotation' in sceneNode ? sceneNode.rotation : undefined,
-      constraints: 'constraints' in sceneNode ? sceneNode.constraints : undefined,
-      cornerRadius: 'cornerRadius' in sceneNode ? sceneNode.cornerRadius : undefined,
-      topLeftRadius: 'topLeftRadius' in sceneNode ? sceneNode.topLeftRadius : undefined,
-      topRightRadius: 'topRightRadius' in sceneNode ? sceneNode.topRightRadius : undefined,
-      bottomLeftRadius: 'bottomLeftRadius' in sceneNode ? sceneNode.bottomLeftRadius : undefined,
-      bottomRightRadius: 'bottomRightRadius' in sceneNode ? sceneNode.bottomRightRadius : undefined
-    };
-    result.geometryHash = simpleHash(JSON.stringify(geometryProps));
-    
-    // Appearance properties
-    const appearanceProps = {
-      opacity: 'opacity' in sceneNode ? sceneNode.opacity : undefined,
-      blendMode: 'blendMode' in sceneNode ? sceneNode.blendMode : undefined,
-      isMask: 'isMask' in sceneNode ? sceneNode.isMask : undefined,
-      visible: sceneNode.visible,
-      locked: sceneNode.locked
-    };
-    result.appearanceHash = simpleHash(JSON.stringify(appearanceProps));
-    
-    // Border properties
-    if ('strokes' in sceneNode || 'strokeWeight' in sceneNode) {
-      const borderProps = {
-        strokeWeight: 'strokeWeight' in sceneNode ? sceneNode.strokeWeight : undefined,
-        strokeAlign: 'strokeAlign' in sceneNode ? sceneNode.strokeAlign : undefined,
-        strokeCap: 'strokeCap' in sceneNode ? sceneNode.strokeCap : undefined,
-        strokeJoin: 'strokeJoin' in sceneNode ? sceneNode.strokeJoin : undefined,
-        strokeMiterLimit: 'strokeMiterLimit' in sceneNode ? sceneNode.strokeMiterLimit : undefined,
-        dashPattern: 'dashPattern' in sceneNode ? sceneNode.dashPattern : undefined
-      };
-      result.borderHash = simpleHash(JSON.stringify(borderProps));
-    }
-    
-    // Typography properties (for text nodes)
-    if (sceneNode.type === 'TEXT') {
-      const textNode = sceneNode as TextNode;
-      const typographyProps = {
-        fontName: textNode.fontName,
-        fontSize: textNode.fontSize,
-        fontWeight: 'fontWeight' in textNode ? textNode.fontWeight : undefined,
-        letterSpacing: textNode.letterSpacing,
-        lineHeight: textNode.lineHeight,
-        paragraphIndent: textNode.paragraphIndent,
-        paragraphSpacing: textNode.paragraphSpacing,
-        textAlignHorizontal: textNode.textAlignHorizontal,
-        textAlignVertical: textNode.textAlignVertical,
-        textCase: textNode.textCase,
-        textDecoration: textNode.textDecoration,
-        textStyleId: textNode.textStyleId,
-        autoRename: textNode.autoRename
-      };
-      result.typographyHash = simpleHash(JSON.stringify(typographyProps));
-    }
-    
-    // Instance overrides (for instance nodes)
-    if (sceneNode.type === 'INSTANCE') {
-      const instanceNode = sceneNode as InstanceNode;
-      if (instanceNode.overrides && instanceNode.overrides.length > 0) {
-        result.instanceOverridesHash = simpleHash(JSON.stringify(instanceNode.overrides));
-      }
-      if (instanceNode.componentProperties && Object.keys(instanceNode.componentProperties).length > 0) {
-        result.exposedPropertiesHash = simpleHash(JSON.stringify(instanceNode.componentProperties));
-      }
-    }
-    
-    // TODO: Variable usage tracking when Figma API supports it
-    // TODO: Interaction/prototyping tracking when Figma API supports it
-    
-  } catch (error) {
-    console.error(`Error in serializeExtendedNodeProperties for node ${sceneNode.id}:`, error);
-  }
-  
-  return result;
-}
-
-// MODIFIED: Renamed and adapted for SceneNodes only
-function serializeSceneNodePropertiesAndStructure(sceneNode: SceneNode): {
-  fillsHash?: string;
-  strokesHash?: string;
-  effectsHash?: string;
-  propertiesHash?: string; // For TextNode specific attributes, or InstanceNode mainComponent+props
-  componentPropertiesHash?: string; // For ComponentNode/ComponentSetNode definitions
-  childrenIds?: string[];
-  structureHash?: string;
-  // Extended properties
-  layoutHash?: string;
-  geometryHash?: string;
-  appearanceHash?: string;
-  borderHash?: string;
-  typographyHash?: string;
-  variableUsageHash?: string;
-  interactionHash?: string;
-  instanceOverridesHash?: string;
-  exposedPropertiesHash?: string;
-} {
-  const result: Record<string, unknown> = {};
-  try {
-    if ('fills' in sceneNode && sceneNode.fills && (sceneNode.fills as readonly Paint[]).length > 0) {
-      result.fillsHash = simpleHash(JSON.stringify(sceneNode.fills));
-    }
-    if ('strokes' in sceneNode && sceneNode.strokes && (sceneNode.strokes as readonly Paint[]).length > 0) {
-      result.strokesHash = simpleHash(JSON.stringify(sceneNode.strokes));
-    }
-    if ('effects' in sceneNode && sceneNode.effects && (sceneNode.effects as readonly Effect[]).length > 0) {
-      result.effectsHash = simpleHash(JSON.stringify(sceneNode.effects));
-    }
-    
-    // Get extended properties
-    const extendedProps = serializeExtendedNodeProperties(sceneNode);
-    Object.assign(result, extendedProps);
-
-    if (sceneNode.type === 'COMPONENT_SET') {
-      const compSet = sceneNode as ComponentSetNode;
-      if (compSet.componentPropertyDefinitions && Object.keys(compSet.componentPropertyDefinitions).length > 0) {
-        result.componentPropertiesHash = simpleHash(JSON.stringify(compSet.componentPropertyDefinitions));
-      }
-      if (compSet.children.length > 0) {
-        result.childrenIds = compSet.children.map(child => child.id);
-        result.structureHash = calculateStructureHash(compSet);
-      }
-    } else if (sceneNode.type === 'COMPONENT') {
-      const compNode = sceneNode as ComponentNode;
-      // Only access componentPropertyDefinitions if it's a non-variant component.
-      // Variants rely on the parent set's definitions and their own variantProperties.
-      if (compNode.parent?.type !== 'COMPONENT_SET') { 
-        // This is a base component or a component not part of a set.
-        // The error states "Can only get definitions of a component set or non-variant component".
-        // A non-variant component is one whose parent is not a ComponentSetNode.
-        try {
-            // Additional check to ensure the property exists before accessing it
-            if ('componentPropertyDefinitions' in compNode && 
-                compNode.componentPropertyDefinitions && 
-                Object.keys(compNode.componentPropertyDefinitions).length > 0) {
-                result.componentPropertiesHash = simpleHash(JSON.stringify(compNode.componentPropertyDefinitions));
-            }
-        } catch (e) {
-            console.warn(`Could not access componentPropertyDefinitions for COMPONENT node ${compNode.id} (parent type: ${compNode.parent?.type}). Error: ${e}`);
-            // Don't throw the error, just skip this property
-        }
-      }
-      // For all components (base or variant), capture children if they exist
-      if (compNode.children.length > 0) {
-        result.childrenIds = compNode.children.map(child => child.id);
-        result.structureHash = calculateStructureHash(compNode);
-      }
-    } else if (sceneNode.type === 'TEXT') {
-      const textNode = sceneNode as TextNode;
-      const textProps = { fontName: textNode.fontName, fontSize: textNode.fontSize, letterSpacing: textNode.letterSpacing, lineHeight: textNode.lineHeight, paragraphIndent: textNode.paragraphIndent, paragraphSpacing: textNode.paragraphSpacing, textAlignHorizontal: textNode.textAlignHorizontal, textAlignVertical: textNode.textAlignVertical, textCase: textNode.textCase, textDecoration: textNode.textDecoration }; // removed appliedTypeRamp for now as it might be too complex or large
-      result.propertiesHash = simpleHash(JSON.stringify(textProps));
-    } else if (sceneNode.type === 'INSTANCE') {
-      const instanceNode = sceneNode as InstanceNode;
-      const instanceDetailsForPropertiesHash = { mainComponentId: instanceNode.mainComponent?.id }; // Base for propertiesHash
-      result.propertiesHash = simpleHash(JSON.stringify(instanceDetailsForPropertiesHash));
+      const changes = compareElements(storedData.elements, currentElements);
+      const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0;
       
-      // Hash the overridden componentProperties if they exist
-      if (instanceNode.componentProperties && Object.keys(instanceNode.componentProperties).length > 0) {
-          result.componentPropertiesHash = simpleHash(JSON.stringify(instanceNode.componentProperties));
-      }
-      
-      if (instanceNode.children?.length > 0){
-          result.childrenIds = instanceNode.children.map(child => child.id);
-          result.structureHash = calculateStructureHash(instanceNode); 
-      }
-    } else if ((sceneNode.type === 'FRAME' || sceneNode.type === 'GROUP') && sceneNode.children.length > 0) {
-      const frameOrGroup = sceneNode as FrameNode | GroupNode;
-      result.childrenIds = frameOrGroup.children.map(child => child.id);
-      result.structureHash = calculateStructureHash(frameOrGroup);
-    }
-    return result;
-  } catch (error) {
-    console.error(`Error in serializeSceneNodePropertiesAndStructure for node ${sceneNode.id} (${sceneNode.type}):`, error);
-    return {};
-  }
-}
-
-// MODIFIED: collectDesignSystemElements to use new serialization functions
-async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
-  const elements: DesignSystemElement[] = [];
-  try {
-    figma.ui.postMessage({ type: 'progress', message: 'Initializing scan...', progress: 0 });
-    const totalPages = figma.root.children.length;
-    let processedPages = 0;
-
-    for (const page of figma.root.children) {
-      if (page.getSharedPluginData('figma', 'private') === 'true') {
-        processedPages++;
-        continue;
-      }
-      const progress = Math.round((processedPages / totalPages) * 80);
-      figma.ui.postMessage({ type: 'progress', message: `Scanning page: ${page.name}...`, progress });
-      await page.loadAsync();
-
-      const componentsOnPage = page.findAllWithCriteria({ types: ['COMPONENT'] });
-      const componentSetsOnPage = page.findAllWithCriteria({ types: ['COMPONENT_SET'] });
-
-      for (const node of componentsOnPage) { // Explicitly iterate ComponentNode[]
-        const visualProps = serializeSceneNodePropertiesAndStructure(node);
-        const variantProps = ('variantProperties' in node && node.variantProperties) ? node.variantProperties : null;
-        const currentTime = Date.now();
-        elements.push({
-          id: node.id,
-          name: node.name,
-          type: 'component', // Correct type for ComponentNode
-          key: node.key,
-          description: node.description,
-          variantProperties: variantProps,
-          variantPropertiesHash: variantProps ? simpleHash(JSON.stringify(variantProps)) : undefined,
-          parentName: node.parent?.type === 'COMPONENT_SET' ? node.parent.name : undefined,
-          modifiedAt: currentTime, // Will be updated later in compareElements if element exists
-          updatedAt: currentTime,  
-          ...visualProps
-        });
-      }
-
-      for (const node of componentSetsOnPage) { // Explicitly iterate ComponentSetNode[]
-        const visualProps = serializeSceneNodePropertiesAndStructure(node);
-        const currentTime = Date.now();
-        elements.push({
-          id: node.id,
-          name: node.name,
-          type: 'componentSet', // Correct type for ComponentSetNode
-          key: node.key,
-          description: node.description,
-          variantProperties: null, // ComponentSet itself doesn't have variantProperties - null is correct per interface
-          variantPropertiesHash: undefined, // Should be undefined when no variant properties exist
-          parentName: undefined, // ComponentSet typically doesn't have a relevant parentName in this context
-          modifiedAt: currentTime, // Will be updated later in compareElements if element exists
-          updatedAt: currentTime,
-          ...visualProps
-        });
-      }
-      processedPages++;
-    }
-
-    figma.ui.postMessage({ type: 'progress', message: 'Processing styles...', progress: 80 });
-    const localStyles: BaseStyle[] = [
-      ...(await figma.getLocalTextStylesAsync()),
-      ...(await figma.getLocalPaintStylesAsync()),
-      ...(await figma.getLocalEffectStylesAsync()),
-      ...(await figma.getLocalGridStylesAsync()),
-    ];
-
-    // Collect variables and variable collections (if available)
-    figma.ui.postMessage({ type: 'progress', message: 'Processing variables...', progress: 85 });
-    try {
-      // Note: Variables API might not be available in all Figma versions
-      if (typeof figma.variables !== 'undefined') {
-        const localVariableCollections = await figma.variables.getLocalVariableCollectionsAsync();
-        const currentTime = Date.now();
-        
-        for (const collection of localVariableCollections) {
-          elements.push({
-            id: collection.id,
-            name: collection.name,
-            type: 'variableCollection',
-            key: collection.key,
-            description: 'description' in collection ? (collection as any).description : undefined,
-            variantProperties: null,
-            variantPropertiesHash: undefined,
-            parentName: undefined,
-            modifiedAt: currentTime,
-            updatedAt: currentTime,
-            variableDefinitionHash: simpleHash(JSON.stringify({
-              modes: collection.modes,
-              defaultModeId: collection.defaultModeId,
-              remote: collection.remote,
-              hiddenFromPublishing: collection.hiddenFromPublishing
-            }))
-          });
-          
-          // Get variables from this collection
-          const variablesInCollection = await figma.variables.getLocalVariablesAsync();
-          const collectionVariables = variablesInCollection.filter(v => v.variableCollectionId === collection.id);
-          
-          for (const variable of collectionVariables) {
-            elements.push({
-              id: variable.id,
-              name: variable.name,
-              type: 'variable',
-              key: variable.key,
-              description: variable.description,
-              variantProperties: null,
-              variantPropertiesHash: undefined,
-              parentName: collection.name,
-              modifiedAt: currentTime,
-              updatedAt: currentTime,
-              variableDefinitionHash: simpleHash(JSON.stringify({
-                resolvedType: variable.resolvedType,
-                valuesByMode: variable.valuesByMode,
-                remote: variable.remote,
-                hiddenFromPublishing: variable.hiddenFromPublishing,
-                scopes: variable.scopes,
-                codeSyntax: variable.codeSyntax
-              }))
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Variables API not available or error accessing variables:', error);
-      // Continue without variables - they might not be supported in this Figma version
-    }
-
-    const stylesCurrentTime = Date.now();
-    for (const style of localStyles) {
-      const styleProps = serializeBaseStyleProperties(style);
-      let elementType = 'unknownStyle';
-      if (style.type === 'TEXT') elementType = 'textStyle';
-      else if (style.type === 'PAINT') elementType = 'colorStyle';
-      else if (style.type === 'EFFECT') elementType = 'effectStyle';
-      else if (style.type === 'GRID') elementType = 'gridStyle';
-      
-      elements.push({
-        id: style.id,
-        name: style.name,
-        type: elementType, 
-        key: style.key,
-        description: style.description,
-        variantProperties: null, // Styles don't have variant properties - null is correct per interface
-        variantPropertiesHash: undefined, // Should be undefined when no variant properties exist
-        parentName: undefined, // Styles don't have parent names in this context
-        modifiedAt: stylesCurrentTime, // Will be updated later in compareElements if element exists
-        updatedAt: stylesCurrentTime,
-        ...styleProps
+      figma.ui.postMessage({
+        type: 'initialized',
+        elementsCount: currentElements.length,
+        isFirstRun: false,
+        changes: hasChanges ? changes : null
       });
     }
-
-    figma.ui.postMessage({ type: 'progress', message: 'Scan complete!', progress: 100 });
-    console.log('Collected elements:', elements.length, 'Sample:', elements.length > 0 ? elements[0] : {});
-    return elements;
   } catch (error) {
-    console.error('Error collecting design system elements:', error);
-    figma.ui.postMessage({ type: 'error', message: 'Collection Error: ' + error });
+    console.error('Error initializing tracking:', error);
     throw error;
   }
 }
 
-// Update comparison function to check structure changes and new hash fields
-function compareElements(previous: DesignSystemElement[], current: DesignSystemElement[]): Changes {
-  console.log('Comparing elements. Previous count:', previous.length, 'Current count:', current.length);
-  
-  const previousMap = new Map(previous.map(item => [item.id, item]));
-  const currentMap = new Map(current.map(item => [item.id, item]));
-  const processedIds = new Set<string>();
-  
-  const modified = current.filter(item => {
-    const prevItem = previousMap.get(item.id);
-    if (!prevItem) return false;
-    
-    processedIds.add(item.id);
-    
-    // Compare based on the new hashed and direct properties
-    const changes = {
-      nameChanged: prevItem.name !== item.name,
-      keyChanged: prevItem.key !== item.key,
-      descriptionChanged: prevItem.description !== item.description,
-      // variantPropsChanged: JSON.stringify(prevItem.variantProperties) !== JSON.stringify(item.variantProperties), // Compare original for debugging if needed
-      variantPropsHashChanged: prevItem.variantPropertiesHash !== item.variantPropertiesHash, // Compare hash for actual change detection
-      parentNameChanged: prevItem.parentName !== item.parentName,
-      
-      // Basic visual properties
-      fillsHashChanged: prevItem.fillsHash !== item.fillsHash,
-      strokesHashChanged: prevItem.strokesHash !== item.strokesHash,
-      effectsHashChanged: prevItem.effectsHash !== item.effectsHash,
-      propertiesHashChanged: prevItem.propertiesHash !== item.propertiesHash, 
-      componentPropertiesHashChanged: prevItem.componentPropertiesHash !== item.componentPropertiesHash, 
-      
-      // Structure
-      childrenIdsChanged: JSON.stringify(prevItem.childrenIds) !== JSON.stringify(item.childrenIds), 
-      structureHashChanged: prevItem.structureHash !== item.structureHash,
-      
-      // Extended properties
-      layoutHashChanged: prevItem.layoutHash !== item.layoutHash,
-      geometryHashChanged: prevItem.geometryHash !== item.geometryHash,
-      appearanceHashChanged: prevItem.appearanceHash !== item.appearanceHash,
-      borderHashChanged: prevItem.borderHash !== item.borderHash,
-      typographyHashChanged: prevItem.typographyHash !== item.typographyHash,
-      variableUsageHashChanged: prevItem.variableUsageHash !== item.variableUsageHash,
-      variableDefinitionHashChanged: prevItem.variableDefinitionHash !== item.variableDefinitionHash,
-      interactionHashChanged: prevItem.interactionHash !== item.interactionHash,
-      instanceOverridesHashChanged: prevItem.instanceOverridesHash !== item.instanceOverridesHash,
-      exposedPropertiesHashChanged: prevItem.exposedPropertiesHash !== item.exposedPropertiesHash
-    };
-    
-    const hasChanges = (() => {
-      for (const key in changes) {
-        if ((changes as any)[key] === true) {
-          return true;
-        }
-      }
-      return false;
-    })();
-    
-    if (hasChanges) {
-      // Element has changes - keep original modifiedAt time but update updatedAt
-      item.modifiedAt = prevItem.modifiedAt || item.modifiedAt; // Preserve original modification time
-      console.log('Element changes detected:', {
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        detectedChanges: changes, // Log which specific properties changed
-        // For debugging structure or children changes specifically:
-        structureDebug: (changes.childrenIdsChanged || changes.structureHashChanged) ? {
-          previousChildrenIds: prevItem.childrenIds,
-          currentChildrenIds: item.childrenIds,
-          previousStructureHash: prevItem.structureHash,
-          currentStructureHash: item.structureHash
-        } : undefined,
-        // previousFull: prevItem, // Uncomment for very detailed debugging
-        // currentFull: item      // Uncomment for very detailed debugging
-      });
-    } else {
-      // Element unchanged - preserve both timestamps
-      item.modifiedAt = prevItem.modifiedAt;
-      item.updatedAt = prevItem.updatedAt;
-    }
-    
-    return hasChanges;
-  });
-  
-  // For unchanged elements, also preserve their timestamps
-  current.forEach(item => {
-    const prevItem = previousMap.get(item.id);
-    if (prevItem && !processedIds.has(item.id)) {
-      // This element exists but wasn't processed as modified
-      item.modifiedAt = prevItem.modifiedAt;
-      item.updatedAt = prevItem.updatedAt;
-    }
-  });
-  
-  const added = current.filter(item => !processedIds.has(item.id) && !previousMap.has(item.id));
-  const removed = previous.filter(item => !processedIds.has(item.id) && !currentMap.has(item.id));
-  
-  const result = { added, modified, removed };
-  
-  console.log('Comparison result:', {
-    added: added.length,
-    modified: modified.length,
-    removed: removed.length,
-    // Optionally log details of modified items if needed for debugging
-    // modifiedDetails: modified.map(item => ({ id: item.id, name: item.name, type: item.type })) 
-  });
-  
-  return result;
-}
-
-// Initialize tracking data
-async function initializeTracking(): Promise<void> {
-  try {
-    const elements = await collectDesignSystemElements();
-  
-    // Save to shared plugin data (chunked)
-    const trackingData = {
-      timestamp: Date.now(),
-      elements: elements
-    };
-    setStoredTrackingData(trackingData);
-    
-    // Notify UI
-    figma.ui.postMessage({ 
-      type: 'initialized', 
-      count: elements.length 
-    });
-  } catch (error) {
-    console.error('Error initializing tracking:', error);
-    figma.ui.postMessage({
-      type: 'error',
-      message: 'Failed to initialize tracking: ' + (error instanceof Error ? error.message : String(error))
-    });
-  }
-}
-
-// Update stored tracking data
+/**
+ * Update tracking data
+ */
 async function updateTrackingData(notifyUI: boolean = true): Promise<void> {
-  console.log(`updateTrackingData called. notifyUI: ${notifyUI}`);
   try {
-    const elements = await collectDesignSystemElements();
-    
-    console.log('updateTrackingData: Current elements collected:', elements.length);
-    
-    const previousData = getStoredTrackingData();
-    if (previousData) {
-      console.log('updateTrackingData: Previous elements from storage:', previousData.elements.length);
-      const changes = compareElements(previousData.elements, elements);
-      console.log('updateTrackingData: Changes if we were to compare now (for debug):', {
-        added: changes.added.length,
-        modified: changes.modified.length,
-        removed: changes.removed.length
-      });
-    }
-    
-    const trackingData = {
+    const currentElements = await collectDesignSystemElements();
+    const trackingData: TrackingData = {
       timestamp: Date.now(),
-      elements: elements
+      elements: currentElements
     };
-    console.log(`updateTrackingData: Preparing to save ${trackingData.elements.length} elements with timestamp ${trackingData.timestamp}`);
+    
     setStoredTrackingData(trackingData);
     
     if (notifyUI) {
-      console.log("updateTrackingData: Notifying UI with 'updated' message.");
-      figma.ui.postMessage({ 
-        type: 'updated', 
-        count: elements.length 
+      figma.ui.postMessage({
+        type: 'updated',
+        elementsCount: currentElements.length,
+        timestamp: trackingData.timestamp
       });
     }
   } catch (error) {
-    console.error('updateTrackingData: Error:', error);
-    figma.ui.postMessage({
-      type: 'error',
-      message: 'Failed to update tracking data: ' + (error instanceof Error ? error.message : String(error))
-    });
+    console.error('Error updating tracking data:', error);
+    throw error;
   }
 }
 
-// Scan and compare with debug logging
+/**
+ * Scan and compare for changes
+ */
 async function scanAndCompare(): Promise<void> {
-  console.log('scanAndCompare: Called.');
   try {
-    figma.ui.postMessage({ type: 'progress', message: 'Scanning current elements...', progress: 0 });
     const currentElements = await collectDesignSystemElements();
-    console.log('scanAndCompare: Current elements collected:', currentElements.length);
-    
-    figma.ui.postMessage({ type: 'progress', message: 'Fetching stored data...', progress: 50 });
     const storedData = getStoredTrackingData();
     
     if (!storedData) {
-      console.log('scanAndCompare: No stored data found. Reporting scanComplete with no changes.');
-      figma.ui.postMessage({ 
-        type: 'scanComplete', 
-        count: currentElements.length,
-        hasChanges: false
-      });
+      await initializeTracking();
       return;
     }
     
-    console.log('scanAndCompare: Stored elements from storage:', storedData.elements.length, 'Timestamp:', storedData.timestamp);
-    
-    figma.ui.postMessage({ type: 'progress', message: 'Comparing elements...', progress: 75 });
     const changes = compareElements(storedData.elements, currentElements);
+    const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0;
     
-    console.log('scanAndCompare: Changes to be sent to UI:', {
-      added: changes.added.length,
-      modified: changes.modified.length,
-      removed: changes.removed.length
-    });
-    
-    figma.ui.postMessage({ type: 'progress', message: 'Finalizing scan...', progress: 100 });
     figma.ui.postMessage({
-      type: 'changes',
-      changes: changes,
-      timestamp: Date.now(), // Use current time for the "changes" message timestamp
-      hasChanges: changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0
+      type: 'scanResults',
+      changes: hasChanges ? changes : null,
+      elementsCount: currentElements.length
     });
   } catch (error) {
-    console.error('scanAndCompare: Error:', error);
-    figma.ui.postMessage({
-      type: 'error',
-      message: 'Failed to scan for changes: ' + (error instanceof Error ? error.message : String(error))
-    });
+    console.error('Error scanning for changes:', error);
+    throw error;
   }
 }
 
-// Format design system element for display
+/**
+ * Format element for display
+ */
 function formatElementForDisplay(element: DesignSystemElement): string {
-  let formattedType = '';
+  const typeEmojis = {
+    component: '🧩',
+    componentSet: '📦',
+    textStyle: '📝',
+    colorStyle: '🎨',
+    variable: '🔧',
+    variableCollection: '📁'
+  };
   
-  switch (element.type) {
-    case 'component':
-      formattedType = 'Component';
-      break;
-    case 'componentSet':
-      formattedType = 'Component Set';
-      break;
-    case 'textStyle':
-      formattedType = 'Text Style';
-      break;
-    case 'colorStyle':
-    case 'paintStyle': // Legacy support for old data
-      formattedType = 'Color Style';
-      break;
-    case 'effectStyle':
-      formattedType = 'Effect Style';
-      break;
-    case 'gridStyle':
-      formattedType = 'Grid Style';
-      break;
-    case 'variableCollection':
-      formattedType = 'Variable Collection';
-      break;
-    case 'variable':
-      formattedType = 'Variable';
-      break;
-    default:
-      formattedType = element.type.charAt(0).toUpperCase() + element.type.slice(1);
+  const emoji = typeEmojis[element.type] || '📄';
+  let displayText = `${emoji} ${element.name}`;
+  
+  if (element.parentName) {
+    displayText += ` (${element.parentName})`;
   }
   
-  // Handle variant components
-  if (element.type === 'component' && element.variantProperties && Object.keys(element.variantProperties).length > 0) {
-    // If we have the parent component set name, use it instead of the component's name
-    const baseName = element.parentName || element.name.split('/')[0];
-    
-    // Format variant properties as Prop1=Value1, Prop2=Value2
-    const variantProps = element.variantProperties;
-    const propKeys = Object.keys(variantProps);
-    
-    // Filter out any empty values or properties that might duplicate the parent name
-    const filteredProps = propKeys.filter(prop => {
-      const value = variantProps[prop];
-      return value && value.trim() !== '' && value.toLowerCase() !== baseName.toLowerCase();
-    });
-    
-    if (filteredProps.length > 0) {
-      const variantPropsString = filteredProps
-        .map(prop => `${prop}=${variantProps[prop]}`)
-        .join(', ');
-      
-      return `${formattedType} – ${baseName} (${variantPropsString})`;
-    }
+  if (element.description) {
+    displayText += `\n   ${element.description}`;
   }
   
-  return `${formattedType} – ${element.name}`;
+  return displayText;
 }
 
-// Create a text node with logify entry
+/**
+ * Add changes to Figma page
+ */
 async function addToFigma(changes: Changes): Promise<void> {
   try {
-    // Load required fonts
-    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-    await figma.loadFontAsync({ family: "Inter", style: "Medium" });
-    await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+    // Find or create the Logify page
+    let changelogPage = figma.root.children.find(page => page.name === LOGIFY_PAGE_NAME);
     
-    // Find or create the 🖹Logify page
-    let changelogPage = figma.root.children.find(page => page.name === LOGIFY_PAGE_NAME) as PageNode;
     if (!changelogPage) {
       changelogPage = figma.createPage();
       changelogPage.name = LOGIFY_PAGE_NAME;
     }
     
-    await changelogPage.loadAsync();
-    
-    // Find or create the main container frame
-    let mainContainer = changelogPage.findOne(node => 
-      node.type === "FRAME" && node.name === CHANGELOG_CONTAINER_NAME) as FrameNode;
+    // Find or create the main container
+    let mainContainer = changelogPage.children.find(node => 
+      node.type === 'FRAME' && node.name === CHANGELOG_CONTAINER_NAME
+    ) as FrameNode;
     
     if (!mainContainer) {
       mainContainer = figma.createFrame();
       mainContainer.name = CHANGELOG_CONTAINER_NAME;
       mainContainer.layoutMode = "VERTICAL";
       mainContainer.primaryAxisSizingMode = "AUTO";
-      mainContainer.counterAxisSizingMode = "FIXED";
-      mainContainer.resize(360, mainContainer.height); // Fixed width 360px
-      mainContainer.itemSpacing = 24; // 24px gap between entries
-      mainContainer.paddingTop = mainContainer.paddingBottom = 24;
-      mainContainer.paddingLeft = mainContainer.paddingRight = 24;
-      mainContainer.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }]; // White background
-      mainContainer.cornerRadius = 16; // 16px border radius
-      mainContainer.strokes = [{ type: "SOLID", color: { r: 213/255, g: 215/255, b: 222/255 } }]; // Outline/Secondary
-      mainContainer.strokeWeight = 1;
+      mainContainer.counterAxisSizingMode = "AUTO";
+      mainContainer.itemSpacing = 16;
+      mainContainer.paddingTop = 16;
+      mainContainer.paddingBottom = 16;
+      mainContainer.paddingLeft = 16;
+      mainContainer.paddingRight = 16;
+      mainContainer.fills = [{ type: "SOLID", color: { r: 0.98, g: 0.98, b: 0.98 } }];
       
-      // Add container to the page
       changelogPage.appendChild(mainContainer);
     }
     
-    // Create a new changelog entry frame
+    // Create entry frame
     const entryFrame = figma.createFrame();
-    entryFrame.name = ENTRY_NAME_PREFIX + " " + new Date().toISOString().split('T')[0];
+    entryFrame.name = `${ENTRY_NAME_PREFIX} ${new Date().toLocaleString()}`;
     entryFrame.layoutMode = "VERTICAL";
     entryFrame.primaryAxisSizingMode = "AUTO";
     entryFrame.counterAxisSizingMode = "AUTO";
     entryFrame.layoutAlign = "STRETCH";
-    entryFrame.itemSpacing = 16; // 16px gap between sections
-    entryFrame.fills = [];
+    entryFrame.itemSpacing = 12;
+    entryFrame.paddingTop = 16;
+    entryFrame.paddingBottom = 16;
+    entryFrame.paddingLeft = 16;
+    entryFrame.paddingRight = 16;
+    entryFrame.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+    entryFrame.cornerRadius = 8;
+    entryFrame.effects = [
+      {
+        type: "DROP_SHADOW",
+        color: { r: 0, g: 0, b: 0, a: 0.1 },
+        offset: { x: 0, y: 2 },
+        radius: 8,
+        spread: 0,
+        visible: true,
+        blendMode: "NORMAL"
+      }
+    ];
     
-    // Create timestamp row with icon
-    const date = new Date();
-    const formattedDate = `🕐 ${date.toTimeString().substring(0, 5)} ${date.toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: 'numeric',
-      year: 'numeric'
-    }).replace(/(\d+)\/(\d+)\/(\d+)/, '$3/$1/$2')}`;
-    
+    // Add timestamp
     const timestampText = figma.createText();
-    timestampText.characters = formattedDate;
-    timestampText.fontSize = 18; // Large size
-    timestampText.fontName = { family: "Inter", style: "Semi Bold" };
-    timestampText.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }]; // Text/Primary
-    timestampText.lineHeight = { value: 20, unit: "PIXELS" }; // 111.111%
+    timestampText.characters = new Date().toLocaleString();
+    timestampText.fontSize = 14;
+    timestampText.fontName = { family: "Inter", style: "Medium" };
+    timestampText.fills = [{ type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } }];
     entryFrame.appendChild(timestampText);
+    
+    // Helper function to create sections
+    const createSection = (title: string, items: DesignSystemElement[], icon: string) => {
+      if (items.length === 0) return null;
       
-    // Define a helper function to create section frames
-    const createSection = (title: string, items: DesignSystemElement[]): FrameNode => {
       const sectionFrame = figma.createFrame();
       sectionFrame.name = title;
       sectionFrame.layoutMode = "VERTICAL";
       sectionFrame.primaryAxisSizingMode = "AUTO";
       sectionFrame.counterAxisSizingMode = "AUTO";
       sectionFrame.layoutAlign = "STRETCH";
-      sectionFrame.itemSpacing = 8; // 8px gap between items within section
+      sectionFrame.itemSpacing = 8;
       sectionFrame.fills = [];
-          
-      // Create section title with appropriate icon
+      
+      // Section title
       const titleText = figma.createText();
-      let icon = "💡";
-      if (title.includes("Changed")) icon = "✏️";
-      if (title.includes("Removed")) icon = "🗑️";
-      titleText.characters = `${icon} ${title.replace("+ ", "")}`;
-      titleText.fontSize = 18; // Large size
+      titleText.characters = `${icon} ${title}`;
+      titleText.fontSize = 16;
       titleText.fontName = { family: "Inter", style: "Semi Bold" };
-      titleText.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }]; // Text/Primary
-      titleText.lineHeight = { value: 20, unit: "PIXELS" }; // 111.111%
+      titleText.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }];
       sectionFrame.appendChild(titleText);
-          
-      // Create items list
-      const itemsFrame = figma.createFrame();
-      itemsFrame.name = "Items";
-      itemsFrame.layoutMode = "VERTICAL";
-      itemsFrame.primaryAxisSizingMode = "AUTO";
-      itemsFrame.counterAxisSizingMode = "AUTO";
-      itemsFrame.layoutAlign = "STRETCH";
-      itemsFrame.itemSpacing = 8;
-      itemsFrame.fills = [];
-          
-      // Add each item
+      
+      // Items
       for (const item of items) {
         const itemText = figma.createText();
         itemText.characters = formatElementForDisplay(item);
-        itemText.fontSize = 12; // Small size
+        itemText.fontSize = 12;
         itemText.fontName = { family: "Inter", style: "Regular" };
-        itemText.fills = [{ type: "SOLID", color: { r: 83/255, g: 88/255, b: 98/255 } }]; // Text/Secondary
-        itemsFrame.appendChild(itemText);
+        itemText.fills = [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.4 } }];
+        sectionFrame.appendChild(itemText);
       }
       
-      sectionFrame.appendChild(itemsFrame);
       return sectionFrame;
     };
     
-    // Add sections for added, modified, and removed items (only if they exist)
-    if (changes.added.length > 0) {
-      const addedSection = createSection("+ Added", changes.added);
-      entryFrame.appendChild(addedSection);
-    }
+    // Add sections
+    const addedSection = createSection("Added", changes.added, "✨");
+    const modifiedSection = createSection("Modified", changes.modified, "✏️");
+    const removedSection = createSection("Removed", changes.removed, "🗑️");
     
-    if (changes.modified.length > 0) {
-      const modifiedSection = createSection("Changed", changes.modified);
-      entryFrame.appendChild(modifiedSection);
-    }
+    [addedSection, modifiedSection, removedSection].forEach(section => {
+      if (section) entryFrame.appendChild(section);
+    });
     
-    if (changes.removed.length > 0) {
-      const removedSection = createSection("Removed", changes.removed);
-      entryFrame.appendChild(removedSection);
-    }
-    
-    // Prepend the entry frame to the container (newest at the top)
+    // Add to container
     if (mainContainer.children.length > 0) {
       mainContainer.insertChild(0, entryFrame);
     } else {
       mainContainer.appendChild(entryFrame);
     }
     
-    // Switch to the logify page - using async method for dynamic-page support
+    // Switch to the logify page
     await figma.setCurrentPageAsync(changelogPage);
     
     // Update tracking data
@@ -1278,6 +1021,7 @@ async function addToFigma(changes: Changes): Promise<void> {
     // Notify UI
     figma.ui.postMessage({ type: 'addedToFigma' });
     figma.notify('Logify entry added to 🖹Logify page');
+    
   } catch (error) {
     console.error('Error adding to Figma:', error);
     figma.ui.postMessage({ 
@@ -1287,78 +1031,40 @@ async function addToFigma(changes: Changes): Promise<void> {
   }
 }
 
-// Handle UI messages
+// ======================== MESSAGE HANDLER ========================
+
+/**
+ * Handle UI messages
+ */
 figma.ui.onmessage = async (msg: PluginMessage) => {
   try {
-    if (msg.type === 'initialize') {
-      try {
+    switch (msg.type) {
+      case 'initialize':
         await initializeTracking();
-      } catch (error) {
-        console.error('Initialize tracking failed:', error);
-        figma.ui.postMessage({
-          type: 'error',
-          message: 'Failed to initialize tracking: ' + (error instanceof Error ? error.message : String(error))
-        });
-        figma.notify('Initialization failed', { error: true });
-      }
-    } else if (msg.type === 'refresh') {
-      try {
-        await scanAndCompare();
-      } catch (error) {
-        console.error('Scan and compare failed:', error);
-        figma.ui.postMessage({
-          type: 'error',
-          message: 'Failed to scan for changes: ' + (error instanceof Error ? error.message : String(error))
-        });
-        figma.notify('Scan failed', { error: true });
-      }
-    } else if (msg.type === 'addToFigma') {
-      if (msg.changes) {
-        // Validate changes data before processing
-        if (!validateChanges(msg.changes)) {
-          console.error('Invalid changes data received');
-          figma.ui.postMessage({
-            type: 'error',
-            message: 'Invalid data format'
-          });
-          figma.notify('Invalid data format', { error: true });
-          return;
-        }
-        try {
-          await addToFigma(msg.changes);
-        } catch (error) {
-          console.error('Add to Figma failed:', error);
-          figma.ui.postMessage({
-            type: 'error',
-            message: 'Failed to add to Figma: ' + (error instanceof Error ? error.message : String(error))
-          });
-          figma.notify('Failed to add to Figma', { error: true });
-        }
-      } else {
-        figma.ui.postMessage({
-          type: 'error',
-          message: 'No changes to add to Figma'
-        });
-        figma.notify('No changes to add to Figma', { error: true });
-      }
-    } else if (msg.type === 'skipVersion') {
-      try {
-        // Update tracking data without adding to Figma (skip this version)
-        await updateTrackingData(false);
+        break;
         
-        // Notify UI that version was skipped
+      case 'refresh':
+        await scanAndCompare();
+        break;
+        
+      case 'addToFigma':
+        if (msg.changes && validateChanges(msg.changes)) {
+          await addToFigma(msg.changes);
+        } else {
+          figma.ui.postMessage({
+            type: 'error',
+            message: 'Invalid changes data'
+          });
+        }
+        break;
+        
+      case 'skipVersion':
+        await updateTrackingData(false);
         figma.ui.postMessage({ type: 'versionSkipped' });
         figma.notify('Version skipped - changes will not be logged');
-      } catch (error) {
-        console.error('Skip version failed:', error);
-        figma.ui.postMessage({
-          type: 'error',
-          message: 'Failed to skip version: ' + (error instanceof Error ? error.message : String(error))
-        });
-        figma.notify('Failed to skip version', { error: true });
-      }
-    } else if (msg.type === 'viewRecords') {
-      try {
+        break;
+        
+      case 'viewRecords':
         const storedData = getStoredTrackingData();
         if (storedData) {
           figma.ui.postMessage({
@@ -1372,31 +1078,25 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
             message: 'No records found'
           });
         }
-      } catch (error) {
-        console.error('View records failed:', error);
+        break;
+        
+      default:
+        console.warn('Unknown message type:', msg.type);
         figma.ui.postMessage({
           type: 'error',
-          message: 'Failed to retrieve records: ' + (error instanceof Error ? error.message : String(error))
+          message: 'Unknown command: ' + msg.type
         });
-        figma.notify('Failed to retrieve records', { error: true });
-      }
-    } else {
-      console.warn('Unknown message type:', msg.type);
-      figma.ui.postMessage({
-        type: 'error',
-        message: 'Unknown command: ' + msg.type
-      });
     }
   } catch (error) {
-    // Catch-all for unexpected errors in message handling
-    console.error('Unexpected error in message handler:', error);
+    console.error('Error in message handler:', error);
     figma.ui.postMessage({
       type: 'error',
-      message: 'Unexpected error occurred: ' + (error instanceof Error ? error.message : String(error))
+      message: 'Error: ' + (error instanceof Error ? error.message : String(error))
     });
-    figma.notify('Unexpected error occurred', { error: true });
+    figma.notify('Error occurred', { error: true });
   }
 };
 
-// Start the plugin
+// ======================== PLUGIN INITIALIZATION ========================
+
 initializePlugin();
