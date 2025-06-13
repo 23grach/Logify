@@ -50,7 +50,7 @@ interface Changes {
 
 interface PluginMessage {
   type: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ======================== CONSTANTS ========================
@@ -144,7 +144,7 @@ function compressDataForStorage(data: TrackingData): Record<string, unknown> {
   return {
     t: data.timestamp,
     e: data.elements.map(element => {
-      const compressed: Record<string, any> = {};
+      const compressed: Record<string, unknown> = {};
       Object.entries(element).forEach(([key, value]) => {
         const compressedKey = compressionMap[key as keyof typeof compressionMap] || key;
         compressed[compressedKey] = value;
@@ -172,12 +172,12 @@ function decompressDataFromStorage(compressedData: Record<string, unknown>): Tra
   return {
     timestamp: compressedData.t as number,
     elements: (compressedData.e as Array<Record<string, unknown>>).map((element) => {
-      const decompressed: Record<string, any> = {};
+      const decompressed: Record<string, unknown> = {};
       Object.entries(element).forEach(([key, value]) => {
         const decompressedKey = decompressionMap[key as keyof typeof decompressionMap] || key;
         decompressed[decompressedKey] = value;
       });
-      return decompressed as DesignSystemElement;
+      return decompressed as unknown as DesignSystemElement;
     })
   };
 }
@@ -192,7 +192,6 @@ function getStoredTrackingData(): TrackingData | null {
     const metadataStr = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta');
     
     if (!metadataStr || metadataStr.trim() === '') {
-      console.log('No metadata found');
       return null;
     }
     
@@ -438,12 +437,13 @@ function serializeComponentProperties(node: ComponentNode | ComponentSetNode): s
 /**
  * Serialize instance properties
  */
-function serializeInstanceProperties(node: InstanceNode): string {
+async function serializeInstanceProperties(node: InstanceNode): Promise<string> {
+  const mainComponent = await node.getMainComponentAsync();
   const instanceData = {
-    mainComponent: node.mainComponent ? {
-      id: node.mainComponent.id,
-      name: node.mainComponent.name,
-      key: node.mainComponent.key,
+    mainComponent: mainComponent ? {
+      id: mainComponent.id,
+      name: mainComponent.name,
+      key: mainComponent.key,
     } : null,
     componentProperties: node.componentProperties,
     overrides: node.overrides,
@@ -478,7 +478,7 @@ function calculateStructureHash(node: SceneNode): string {
   const hasChildren = 'children' in node && node.children.length > 0;
   if (!hasChildren) return '';
   
-  const childrenData = (node as any).children.map((child: SceneNode) => ({
+  const childrenData = (node as BaseNode & ChildrenMixin).children.map((child: SceneNode) => ({
     id: child.id,
     name: child.name,
     type: child.type,
@@ -491,7 +491,7 @@ function calculateStructureHash(node: SceneNode): string {
 /**
  * Serialize all properties of a scene node
  */
-function serializeSceneNodeProperties(sceneNode: SceneNode): Partial<DesignSystemElement> {
+async function serializeSceneNodeProperties(sceneNode: SceneNode): Promise<Partial<DesignSystemElement>> {
   const properties: Partial<DesignSystemElement> = {};
   
   // Basic properties
@@ -510,7 +510,7 @@ function serializeSceneNodeProperties(sceneNode: SceneNode): Partial<DesignSyste
   }
   
   if (sceneNode.type === 'INSTANCE') {
-    properties.instanceOverridesHash = serializeInstanceProperties(sceneNode as InstanceNode);
+    properties.instanceOverridesHash = await serializeInstanceProperties(sceneNode as InstanceNode);
   }
   
   // Structure
@@ -563,6 +563,7 @@ async function collectComponents(): Promise<DesignSystemElement[]> {
   const documentComponents = figma.root.findAllWithCriteria({ types: ['COMPONENT'] });
   
   for (const component of documentComponents) {
+    const serializedProperties = await serializeSceneNodeProperties(component);
     const element: DesignSystemElement = {
       id: component.id,
       name: component.name,
@@ -570,7 +571,7 @@ async function collectComponents(): Promise<DesignSystemElement[]> {
       key: component.key,
       description: component.description,
       parentName: component.parent?.type === 'COMPONENT_SET' ? component.parent.name : undefined,
-      ...serializeSceneNodeProperties(component)
+      ...serializedProperties
     };
     
     components.push(element);
@@ -588,13 +589,14 @@ async function collectComponentSets(): Promise<DesignSystemElement[]> {
   const documentComponentSets = figma.root.findAllWithCriteria({ types: ['COMPONENT_SET'] });
   
   for (const componentSet of documentComponentSets) {
+    const serializedProperties = await serializeSceneNodeProperties(componentSet);
     const element: DesignSystemElement = {
       id: componentSet.id,
       name: componentSet.name,
       type: 'componentSet',
       key: componentSet.key,
       description: componentSet.description,
-      ...serializeSceneNodeProperties(componentSet)
+      ...serializedProperties
     };
     
     componentSets.push(element);
@@ -610,7 +612,7 @@ async function collectStyles(): Promise<DesignSystemElement[]> {
   const styles: DesignSystemElement[] = [];
   
   // Text styles
-  const textStyles = figma.getLocalTextStyles();
+  const textStyles = await figma.getLocalTextStylesAsync();
   for (const style of textStyles) {
     const element: DesignSystemElement = {
       id: style.id,
@@ -624,7 +626,7 @@ async function collectStyles(): Promise<DesignSystemElement[]> {
   }
   
   // Paint styles
-  const paintStyles = figma.getLocalPaintStyles();
+  const paintStyles = await figma.getLocalPaintStylesAsync();
   for (const style of paintStyles) {
     const element: DesignSystemElement = {
       id: style.id,
@@ -638,7 +640,7 @@ async function collectStyles(): Promise<DesignSystemElement[]> {
   }
   
   // Effect styles
-  const effectStyles = figma.getLocalEffectStyles();
+  const effectStyles = await figma.getLocalEffectStylesAsync();
   for (const style of effectStyles) {
     const element: DesignSystemElement = {
       id: style.id,
@@ -661,7 +663,7 @@ async function collectVariables(): Promise<DesignSystemElement[]> {
   const variables: DesignSystemElement[] = [];
   
   // Variable collections
-  const collections = figma.variables.getLocalVariableCollections();
+  const collections = await figma.variables.getLocalVariableCollectionsAsync();
   for (const collection of collections) {
     const element: DesignSystemElement = {
       id: collection.id,
@@ -680,7 +682,7 @@ async function collectVariables(): Promise<DesignSystemElement[]> {
   }
   
   // Variables
-  const localVariables = figma.variables.getLocalVariables();
+  const localVariables = await figma.variables.getLocalVariablesAsync();
   for (const variable of localVariables) {
     const element: DesignSystemElement = {
       id: variable.id,
@@ -701,6 +703,9 @@ async function collectVariables(): Promise<DesignSystemElement[]> {
  */
 async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
   const elements: DesignSystemElement[] = [];
+  
+  // Load all pages first (required by Figma API for findAllWithCriteria)
+  await figma.loadAllPagesAsync();
   
   // Collect all element types
   const [components, componentSets, styles, variables] = await Promise.all([
@@ -775,6 +780,15 @@ function hasElementChanged(previous: DesignSystemElement, current: DesignSystemE
  */
 function initializePlugin(): void {
   figma.showUI(__html__, { width: 400, height: 600 });
+  
+  // Automatically start tracking initialization
+  initializeTracking().catch(error => {
+    console.error('Failed to initialize tracking:', error);
+    figma.ui.postMessage({ 
+      type: 'error', 
+      message: 'Failed to initialize: ' + (error instanceof Error ? error.message : String(error))
+    });
+  });
 }
 
 /**
@@ -794,19 +808,24 @@ async function initializeTracking(): Promise<void> {
       
       figma.ui.postMessage({
         type: 'initialized',
-        elementsCount: currentElements.length,
-        isFirstRun: true
+        count: currentElements.length
       });
     } else {
       const changes = compareElements(storedData.elements, currentElements);
       const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0;
       
-      figma.ui.postMessage({
-        type: 'initialized',
-        elementsCount: currentElements.length,
-        isFirstRun: false,
-        changes: hasChanges ? changes : null
-      });
+      if (hasChanges) {
+        figma.ui.postMessage({
+          type: 'changes',
+          changes: changes,
+          timestamp: Date.now(),
+          hasChanges: true
+        });
+      } else {
+        figma.ui.postMessage({
+          type: 'scanComplete'
+        });
+      }
     }
   } catch (error) {
     console.error('Error initializing tracking:', error);
@@ -856,11 +875,18 @@ async function scanAndCompare(): Promise<void> {
     const changes = compareElements(storedData.elements, currentElements);
     const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0;
     
-    figma.ui.postMessage({
-      type: 'scanResults',
-      changes: hasChanges ? changes : null,
-      elementsCount: currentElements.length
-    });
+    if (hasChanges) {
+      figma.ui.postMessage({
+        type: 'changes',
+        changes: changes,
+        timestamp: Date.now(),
+        hasChanges: true
+      });
+    } else {
+      figma.ui.postMessage({
+        type: 'scanComplete'
+      });
+    }
   } catch (error) {
     console.error('Error scanning for changes:', error);
     throw error;
@@ -899,6 +925,11 @@ function formatElementForDisplay(element: DesignSystemElement): string {
  */
 async function addToFigma(changes: Changes): Promise<void> {
   try {
+    // Load required fonts
+    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    await figma.loadFontAsync({ family: "Inter", style: "Medium" });
+    await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+    
     // Find or create the Logify page
     let changelogPage = figma.root.children.find(page => page.name === LOGIFY_PAGE_NAME);
     
@@ -942,17 +973,6 @@ async function addToFigma(changes: Changes): Promise<void> {
     entryFrame.paddingRight = 16;
     entryFrame.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
     entryFrame.cornerRadius = 8;
-    entryFrame.effects = [
-      {
-        type: "DROP_SHADOW",
-        color: { r: 0, g: 0, b: 0, a: 0.1 },
-        offset: { x: 0, y: 2 },
-        radius: 8,
-        spread: 0,
-        visible: true,
-        blendMode: "NORMAL"
-      }
-    ];
     
     // Add timestamp
     const timestampText = figma.createText();
@@ -1047,7 +1067,7 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
         await scanAndCompare();
         break;
         
-      case 'addToFigma':
+      case 'addToFigma': {
         if (msg.changes && validateChanges(msg.changes)) {
           await addToFigma(msg.changes);
         } else {
@@ -1057,6 +1077,7 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
           });
         }
         break;
+      }
         
       case 'skipVersion':
         await updateTrackingData(false);
@@ -1064,7 +1085,7 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
         figma.notify('Version skipped - changes will not be logged');
         break;
         
-      case 'viewRecords':
+      case 'viewRecords': {
         const storedData = getStoredTrackingData();
         if (storedData) {
           figma.ui.postMessage({
@@ -1079,6 +1100,7 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
           });
         }
         break;
+      }
         
       default:
         console.warn('Unknown message type:', msg.type);
