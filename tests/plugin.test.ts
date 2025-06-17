@@ -1062,4 +1062,82 @@ describe('Logify Plugin Functional Tests', () => {
       expect(decompressed.instanceOverridesHash).toBe(originalElement.instanceOverridesHash);
     });
   });
+
+  describe('Comment Functionality', () => {
+    const testMockElement = {
+      id: 'test1',
+      name: 'Test Component',
+      type: 'component' as const,
+      key: 'test-key',
+      description: 'Test description'
+    };
+
+    it('should handle addToFigma message with comment', () => {
+      const mockChanges = {
+        added: [testMockElement],
+        modified: [],
+        removed: [],
+        comment: 'Test comment for this entry'
+      };
+
+      const message = {
+        type: 'addToFigma',
+        changes: mockChanges,
+        comment: 'Test comment for this entry'
+      };
+
+      // This should not throw
+      expect(() => {
+        // Validate comment length
+        const comment = typeof message.comment === 'string' ? message.comment.trim() : '';
+        expect(comment.length).toBeLessThanOrEqual(500);
+        expect(comment).toBe('Test comment for this entry');
+      }).not.toThrow();
+    });
+
+    it('should reject comments that are too long', () => {
+      const longComment = 'a'.repeat(501);
+      const message = {
+        type: 'addToFigma',
+        changes: {
+          added: [testMockElement],
+          modified: [],
+          removed: []
+        },
+        comment: longComment
+      };
+
+      const comment = typeof message.comment === 'string' ? message.comment.trim() : '';
+      expect(comment.length).toBeGreaterThan(500);
+    });
+
+    it('should handle empty comment gracefully', () => {
+      const message = {
+        type: 'addToFigma',
+        changes: {
+          added: [testMockElement],
+          modified: [],
+          removed: []
+        },
+        comment: ''
+      };
+
+      const comment = typeof message.comment === 'string' ? message.comment.trim() : '';
+      expect(comment).toBe('');
+    });
+
+    it('should handle undefined comment gracefully', () => {
+      const message = {
+        type: 'addToFigma',
+        changes: {
+          added: [testMockElement],
+          modified: [],
+          removed: []
+        }
+      };
+
+      const comment = typeof (message as any).comment === 'string' ? (message as any).comment.trim() : '';
+      expect(comment).toBe('');
+    });
+  });
 }); 

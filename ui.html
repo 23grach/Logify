@@ -316,6 +316,41 @@
       color: #1a1a1a;
       margin: 0;
     }
+
+    /* Comment input styles */
+    .comment-container {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .comment-input {
+      width: 100%;
+      min-height: 60px;
+      padding: 12px 16px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #1a1a1a;
+      background: #ffffff;
+      resize: vertical;
+      transition: all 0.15s ease;
+    }
+    
+    .comment-input:hover {
+      border-color: #d0d0d0;
+    }
+    
+    .comment-input:focus {
+      outline: none;
+      border-color: #007AFF;
+      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+    }
+    
+    .comment-input::placeholder {
+      color: #999999;
+    }
   </style>
 </head>
 <body>
@@ -566,6 +601,16 @@
         </div>
         
         <div class="actions-container">
+          ${hasChanges ? `
+            <div class="comment-container">
+              <textarea 
+                class="comment-input" 
+                id="comment-input" 
+                placeholder="Describe the changes or provide context..."
+                maxlength="500"
+              ></textarea>
+            </div>
+          ` : ''}
           <button class="button button-primary" id="add-to-figma-button" ${!hasChanges ? 'disabled' : ''}>Add to Figma</button>
           <button class="button" id="skip-version-button" ${!hasChanges ? 'disabled' : ''}>Skip Version</button>
           <button class="button" id="refresh-button">Refresh</button>
@@ -670,11 +715,16 @@
       if (addToFigmaButton) {
         addToFigmaButton.addEventListener('click', () => {
           if (currentChanges) {
+            // Get comment from input field
+            const commentInput = document.getElementById('comment-input');
+            const comment = commentInput ? commentInput.value.trim() : '';
+            
             renderUI(renderLoadingScreen('Adding to Figma...'));
             parent.postMessage({ 
               pluginMessage: { 
                 type: 'addToFigma',
-                changes: currentChanges
+                changes: currentChanges,
+                comment: comment
               } 
             }, '*');
           }
@@ -695,6 +745,8 @@
           }
         });
       }
+      
+
     }
     
     // Helper to render UI and set up event listeners

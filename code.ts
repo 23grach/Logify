@@ -72,6 +72,7 @@ interface Changes {
   added: DesignSystemElement[];
   modified: DetailedModifiedElement[];
   removed: DesignSystemElement[];
+  comment?: string;
 }
 
 interface PluginMessage {
@@ -1230,6 +1231,31 @@ async function addToFigma(changes: Changes): Promise<void> {
     timestampText.fills = [{ type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } }];
     entryFrame.appendChild(timestampText);
     
+    // Add comment if provided
+    if (changes.comment) {
+      const commentText = figma.createText();
+      commentText.characters = `💬 ${changes.comment}`;
+      commentText.fontSize = 13;
+      commentText.fontName = { family: "Inter", style: "Regular" };
+      commentText.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.2, b: 0.2 } }];
+      
+      // Create comment container for better styling
+      const commentContainer = figma.createFrame();
+      commentContainer.layoutMode = "VERTICAL";
+      commentContainer.primaryAxisSizingMode = "AUTO";
+      commentContainer.counterAxisSizingMode = "AUTO";
+      commentContainer.layoutAlign = "STRETCH";
+      commentContainer.paddingTop = 8;
+      commentContainer.paddingBottom = 8;
+      commentContainer.paddingLeft = 12;
+      commentContainer.paddingRight = 12;
+      commentContainer.cornerRadius = 4;
+      commentContainer.fills = [{ type: "SOLID", color: { r: 0.97, g: 0.99, b: 1 } }];
+      
+      commentContainer.appendChild(commentText);
+      entryFrame.appendChild(commentContainer);
+    }
+    
     // Helper function to create sections with enhanced formatting
     const createSection = (title: string, items: (DesignSystemElement | DetailedModifiedElement)[], icon: string) => {
       if (items.length === 0) return null;
@@ -1341,7 +1367,23 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
         
       case 'addToFigma': {
         if (msg.changes && validateChanges(msg.changes)) {
-          await addToFigma(msg.changes);
+          // Validate comment if provided
+          const comment = typeof msg.comment === 'string' ? msg.comment.trim() : '';
+          if (comment && comment.length > 500) {
+            figma.ui.postMessage({
+              type: 'error',
+              message: 'Comment too long (maximum 500 characters)'
+            });
+            break;
+          }
+          
+          // Add comment to changes object
+          const changesWithComment = {
+            ...msg.changes,
+            comment: comment || undefined
+          };
+          
+          await addToFigma(changesWithComment);
         } else {
           figma.ui.postMessage({
             type: 'error',
