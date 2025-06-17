@@ -35,6 +35,32 @@ interface DesignSystemElement {
   interactionHash?: string;
   instanceOverridesHash?: string;
   exposedPropertiesHash?: string;
+  // Raw property data for detailed comparison
+  fillsData?: string;
+  strokesData?: string;
+  cornerRadiusData?: string;
+  sizeData?: string;
+  effectsData?: string;
+  typographyData?: string;
+}
+
+/**
+ * Detailed property change information
+ */
+interface PropertyChangeInfo {
+  property: string;
+  displayName: string;
+  oldValue: string;
+  newValue: string;
+  changeType: 'added' | 'removed' | 'modified';
+}
+
+/**
+ * Enhanced element with detailed changes
+ */
+interface DetailedModifiedElement extends DesignSystemElement {
+  changes: PropertyChangeInfo[];
+  changesSummary: string;
 }
 
 interface TrackingData {
@@ -44,7 +70,7 @@ interface TrackingData {
 
 interface Changes {
   added: DesignSystemElement[];
-  modified: DesignSystemElement[];
+  modified: DetailedModifiedElement[];
   removed: DesignSystemElement[];
 }
 
@@ -471,6 +497,217 @@ function serializeVariableProperties(variable: Variable): string {
   return hashObject(variableData);
 }
 
+// ======================== DETAILED COMPARISON FUNCTIONS ========================
+
+/**
+ * Convert RGB to HEX format
+ */
+function rgbToHex(r: number, g: number, b: number): string {
+  const toHex = (c: number) => {
+    const hex = Math.round(c * 255).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
+/**
+ * Serialize fill data for detailed comparison
+ */
+function serializeFillDataDetailed(paints: readonly Paint[]): string {
+  if (!paints || paints.length === 0) return 'None';
+  
+  return paints.map(paint => {
+    if (paint.type === 'SOLID') {
+      const color = paint.color;
+      const hex = rgbToHex(color.r, color.g, color.b);
+      const opacity = paint.opacity !== undefined ? paint.opacity : 1;
+      return `${hex}${opacity < 1 ? ` ${Math.round(opacity * 100)}%` : ''}`;
+    } else if (paint.type === 'GRADIENT_LINEAR' || paint.type === 'GRADIENT_RADIAL') {
+      return `${paint.type.replace('GRADIENT_', '').toLowerCase()} gradient`;
+    }
+    return paint.type.toLowerCase().replace('_', ' ');
+  }).join(', ');
+}
+
+/**
+ * Serialize stroke data for detailed comparison
+ */
+function serializeStrokeDataDetailed(node: SceneNode): string {
+  if (!('strokes' in node)) return 'None';
+  
+  const strokes = node.strokes;
+  const strokeWeight = 'strokeWeight' in node ? node.strokeWeight : 0;
+  
+  if (!strokes || strokes.length === 0 || strokeWeight === 0) return 'None';
+  
+  const strokeColor = serializeFillDataDetailed(strokes);
+  return `${strokeColor}, ${String(strokeWeight)}px`;
+}
+
+/**
+ * Serialize corner radius for detailed comparison
+ */
+function serializeCornerRadiusDetailed(node: SceneNode): string {
+  if (!('cornerRadius' in node)) return 'None';
+  
+  const radius = node.cornerRadius;
+  if (typeof radius === 'number') {
+    return radius === 0 ? 'None' : `${radius}px`;
+  }
+  
+  // Mixed radius
+  const topLeft = 'topLeftRadius' in node ? node.topLeftRadius : 0;
+  const topRight = 'topRightRadius' in node ? node.topRightRadius : 0;
+  const bottomLeft = 'bottomLeftRadius' in node ? node.bottomLeftRadius : 0;
+  const bottomRight = 'bottomRightRadius' in node ? node.bottomRightRadius : 0;
+  
+  if (topLeft === topRight && topRight === bottomLeft && bottomLeft === bottomRight) {
+    return topLeft === 0 ? 'None' : `${topLeft}px`;
+  }
+  
+  return `${topLeft}/${topRight}/${bottomRight}/${bottomLeft}px`;
+}
+
+/**
+ * Serialize size data for detailed comparison
+ */
+function serializeSizeDataDetailed(node: SceneNode): string {
+  return `${Math.round(node.width)}×${Math.round(node.height)}px`;
+}
+
+/**
+ * Serialize effects for detailed comparison
+ */
+function serializeEffectsDataDetailed(effects: readonly Effect[]): string {
+  if (!effects || effects.length === 0) return 'None';
+  
+  return effects.map(effect => {
+    if (effect.type === 'DROP_SHADOW') {
+      const color = effect.color;
+      const hex = rgbToHex(color.r, color.g, color.b);
+      const opacity = color.a !== undefined ? color.a : 1;
+      return `Drop Shadow: ${hex}${opacity < 1 ? ` ${Math.round(opacity * 100)}%` : ''}, blur ${effect.radius}px`;
+    } else if (effect.type === 'LAYER_BLUR') {
+      return `Layer Blur: ${effect.radius}px`;
+    }
+    return effect.type.toLowerCase().replace('_', ' ');
+  }).join(', ');
+}
+
+/**
+ * Serialize typography data for detailed comparison
+ */
+function serializeTypographyDataDetailed(node: SceneNode): string {
+  if (node.type !== 'TEXT') return 'None';
+  
+  const textNode = node as TextNode;
+  const fontName = typeof textNode.fontName === 'object' ? textNode.fontName.family : 'Mixed';
+  const fontSize = typeof textNode.fontSize === 'number' ? textNode.fontSize : 'Mixed';
+  
+  return `${fontName}, ${fontSize}px`;
+}
+
+/**
+ * Compare property values and create detailed change description
+ */
+function analyzePropertyChanges(previous: DesignSystemElement, current: DesignSystemElement): PropertyChangeInfo[] {
+  const changes: PropertyChangeInfo[] = [];
+  
+  // Compare fills
+  if (previous.fillsData !== current.fillsData) {
+    changes.push({
+      property: 'fills',
+      displayName: 'Fill',
+      oldValue: previous.fillsData || 'None',
+      newValue: current.fillsData || 'None',
+      changeType: 'modified'
+    });
+  }
+  
+  // Compare strokes
+  if (previous.strokesData !== current.strokesData) {
+    changes.push({
+      property: 'strokes',
+      displayName: 'Stroke',
+      oldValue: previous.strokesData || 'None',
+      newValue: current.strokesData || 'None',
+      changeType: 'modified'
+    });
+  }
+  
+  // Compare corner radius
+  if (previous.cornerRadiusData !== current.cornerRadiusData) {
+    changes.push({
+      property: 'cornerRadius',
+      displayName: 'Corner Radius',
+      oldValue: previous.cornerRadiusData || 'None',
+      newValue: current.cornerRadiusData || 'None',
+      changeType: 'modified'
+    });
+  }
+  
+  // Compare size
+  if (previous.sizeData !== current.sizeData) {
+    changes.push({
+      property: 'size',
+      displayName: 'Size',
+      oldValue: previous.sizeData || 'Unknown',
+      newValue: current.sizeData || 'Unknown',
+      changeType: 'modified'
+    });
+  }
+  
+  // Compare effects
+  if (previous.effectsData !== current.effectsData) {
+    changes.push({
+      property: 'effects',
+      displayName: 'Effects',
+      oldValue: previous.effectsData || 'None',
+      newValue: current.effectsData || 'None',
+      changeType: 'modified'
+    });
+  }
+  
+  // Compare typography
+  if (previous.typographyData !== current.typographyData) {
+    changes.push({
+      property: 'typography',
+      displayName: 'Typography',
+      oldValue: previous.typographyData || 'None',
+      newValue: current.typographyData || 'None',
+      changeType: 'modified'
+    });
+  }
+  
+  // Compare description
+  if (previous.description !== current.description) {
+    changes.push({
+      property: 'description',
+      displayName: 'Description',
+      oldValue: previous.description || 'None',
+      newValue: current.description || 'None',
+      changeType: 'modified'
+    });
+  }
+  
+  return changes;
+}
+
+/**
+ * Create a summary of changes for display
+ */
+function createChangesSummary(changes: PropertyChangeInfo[]): string {
+  if (changes.length === 0) return 'No specific changes detected';
+  
+  if (changes.length === 1) {
+    const change = changes[0];
+    return `${change.displayName}: ${change.oldValue} → ${change.newValue}`;
+  }
+  
+  const changeTypes = changes.map(c => c.displayName).join(', ');
+  return `Changed: ${changeTypes} (${changes.length} properties)`;
+}
+
 /**
  * Calculate structure hash for a node
  */
@@ -489,37 +726,33 @@ function calculateStructureHash(node: SceneNode): string {
 }
 
 /**
- * Serialize all properties of a scene node
+ * Serialize scene node properties with detailed data collection
  */
 async function serializeSceneNodeProperties(sceneNode: SceneNode): Promise<Partial<DesignSystemElement>> {
-  const properties: Partial<DesignSystemElement> = {};
-  
-  // Basic properties
-  properties.fillsHash = 'fills' in sceneNode && sceneNode.fills !== figma.mixed ? serializePaintProperties(sceneNode.fills) : '';
-  properties.strokesHash = serializeStrokeProperties(sceneNode);
-  properties.effectsHash = 'effects' in sceneNode ? serializeEffectProperties(sceneNode.effects) : '';
-  
-  // Extended properties
-  properties.layoutHash = serializeLayoutProperties(sceneNode);
-  properties.geometryHash = serializeGeometryProperties(sceneNode);
-  properties.typographyHash = serializeTypographyProperties(sceneNode);
-  
-  // Type-specific properties
-  if (sceneNode.type === 'COMPONENT' || sceneNode.type === 'COMPONENT_SET') {
-    properties.componentPropertiesHash = serializeComponentProperties(sceneNode as ComponentNode | ComponentSetNode);
-  }
-  
+  const baseProperties: Partial<DesignSystemElement> = {
+    fillsHash: 'fills' in sceneNode && sceneNode.fills !== figma.mixed ? serializePaintProperties(sceneNode.fills) : '',
+    strokesHash: 'strokes' in sceneNode ? serializeStrokeProperties(sceneNode) : '',
+    effectsHash: 'effects' in sceneNode ? serializeEffectProperties(sceneNode.effects) : '',
+    layoutHash: serializeLayoutProperties(sceneNode),
+    geometryHash: serializeGeometryProperties(sceneNode),
+    typographyHash: serializeTypographyProperties(sceneNode),
+    structureHash: calculateStructureHash(sceneNode),
+    
+    // Detailed data for comparison
+    fillsData: 'fills' in sceneNode && sceneNode.fills !== figma.mixed ? serializeFillDataDetailed(sceneNode.fills) : 'None',
+    strokesData: serializeStrokeDataDetailed(sceneNode),
+    cornerRadiusData: serializeCornerRadiusDetailed(sceneNode),
+    sizeData: serializeSizeDataDetailed(sceneNode),
+    effectsData: 'effects' in sceneNode ? serializeEffectsDataDetailed(sceneNode.effects) : 'None',
+    typographyData: serializeTypographyDataDetailed(sceneNode)
+  };
+
   if (sceneNode.type === 'INSTANCE') {
-    properties.instanceOverridesHash = await serializeInstanceProperties(sceneNode as InstanceNode);
+    const instanceData = await serializeInstanceProperties(sceneNode as InstanceNode);
+    baseProperties.instanceOverridesHash = instanceData;
   }
-  
-  // Structure
-  if ('children' in sceneNode) {
-    properties.childrenIds = sceneNode.children.map(child => child.id);
-    properties.structureHash = calculateStructureHash(sceneNode);
-  }
-  
-  return properties;
+
+  return baseProperties;
 }
 
 /**
@@ -723,7 +956,7 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
 // ======================== COMPARISON FUNCTIONS ========================
 
 /**
- * Compare two arrays of elements and return changes
+ * Compare two arrays of elements and return changes with detailed analysis
  */
 function compareElements(previous: DesignSystemElement[], current: DesignSystemElement[]): Changes {
   const changes: Changes = { added: [], modified: [], removed: [] };
@@ -745,11 +978,17 @@ function compareElements(previous: DesignSystemElement[], current: DesignSystemE
     }
   }
   
-  // Find modified elements
+  // Find modified elements with detailed change analysis
   for (const currentElement of current) {
     const previousElement = previousMap.get(currentElement.id);
     if (previousElement && hasElementChanged(previousElement, currentElement)) {
-      changes.modified.push(currentElement);
+      const detailedChanges = analyzePropertyChanges(previousElement, currentElement);
+      const detailedElement: DetailedModifiedElement = {
+        ...currentElement,
+        changes: detailedChanges,
+        changesSummary: createChangesSummary(detailedChanges)
+      };
+      changes.modified.push(detailedElement);
     }
   }
   
@@ -894,9 +1133,9 @@ async function scanAndCompare(): Promise<void> {
 }
 
 /**
- * Format element for display
+ * Format element for display with detailed changes
  */
-function formatElementForDisplay(element: DesignSystemElement): string {
+function formatElementForDisplay(element: DesignSystemElement | DetailedModifiedElement): string {
   const typeEmojis = {
     component: '🧩',
     componentSet: '📦',
@@ -913,7 +1152,16 @@ function formatElementForDisplay(element: DesignSystemElement): string {
     displayText += ` (${element.parentName})`;
   }
   
-  if (element.description) {
+  // Add detailed changes for modified elements
+  if ('changes' in element && element.changes && element.changes.length > 0) {
+    for (const change of element.changes) {
+      displayText += `\n   • ${change.displayName}: ${change.oldValue} → ${change.newValue}`;
+    }
+    
+    if (element.changes.length > 3) {
+      displayText += `\n   ... and ${element.changes.length - 3} more changes`;
+    }
+  } else if (element.description) {
     displayText += `\n   ${element.description}`;
   }
   
@@ -982,8 +1230,8 @@ async function addToFigma(changes: Changes): Promise<void> {
     timestampText.fills = [{ type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } }];
     entryFrame.appendChild(timestampText);
     
-    // Helper function to create sections
-    const createSection = (title: string, items: DesignSystemElement[], icon: string) => {
+    // Helper function to create sections with enhanced formatting
+    const createSection = (title: string, items: (DesignSystemElement | DetailedModifiedElement)[], icon: string) => {
       if (items.length === 0) return null;
       
       const sectionFrame = figma.createFrame();
@@ -1003,14 +1251,38 @@ async function addToFigma(changes: Changes): Promise<void> {
       titleText.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }];
       sectionFrame.appendChild(titleText);
       
-      // Items
+      // Items with enhanced display
       for (const item of items) {
         const itemText = figma.createText();
         itemText.characters = formatElementForDisplay(item);
         itemText.fontSize = 12;
         itemText.fontName = { family: "Inter", style: "Regular" };
         itemText.fills = [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.4 } }];
-        sectionFrame.appendChild(itemText);
+        
+        // Special styling for modified items with changes
+        if ('changes' in item && item.changes && item.changes.length > 0) {
+          itemText.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.4, b: 0.8 } }];
+          
+          // Create a container for better layout
+          const itemContainer = figma.createFrame();
+          itemContainer.layoutMode = "VERTICAL";
+          itemContainer.primaryAxisSizingMode = "AUTO";
+          itemContainer.counterAxisSizingMode = "AUTO";
+          itemContainer.layoutAlign = "STRETCH";
+          itemContainer.itemSpacing = 4;
+          itemContainer.fills = [];
+          itemContainer.paddingLeft = 8;
+          itemContainer.paddingRight = 8;
+          itemContainer.paddingTop = 6;
+          itemContainer.paddingBottom = 6;
+          itemContainer.cornerRadius = 4;
+          itemContainer.fills = [{ type: "SOLID", color: { r: 0.95, g: 0.97, b: 1 } }];
+          
+          itemContainer.appendChild(itemText);
+          sectionFrame.appendChild(itemContainer);
+        } else {
+          sectionFrame.appendChild(itemText);
+        }
       }
       
       return sectionFrame;
