@@ -1231,30 +1231,6 @@ async function addToFigma(changes: Changes): Promise<void> {
     timestampText.fills = [{ type: "SOLID", color: { r: 0.4, g: 0.4, b: 0.4 } }];
     entryFrame.appendChild(timestampText);
     
-    // Add comment if provided
-    if (changes.comment) {
-      const commentText = figma.createText();
-      commentText.characters = `💬 ${changes.comment}`;
-      commentText.fontSize = 13;
-      commentText.fontName = { family: "Inter", style: "Regular" };
-      commentText.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.2, b: 0.2 } }];
-      
-      // Create comment container for better styling
-      const commentContainer = figma.createFrame();
-      commentContainer.layoutMode = "VERTICAL";
-      commentContainer.primaryAxisSizingMode = "AUTO";
-      commentContainer.counterAxisSizingMode = "AUTO";
-      commentContainer.layoutAlign = "STRETCH";
-      commentContainer.paddingTop = 8;
-      commentContainer.paddingBottom = 8;
-      commentContainer.paddingLeft = 12;
-      commentContainer.paddingRight = 12;
-      commentContainer.cornerRadius = 4;
-      commentContainer.fills = [{ type: "SOLID", color: { r: 0.97, g: 0.99, b: 1 } }];
-      
-      commentContainer.appendChild(commentText);
-      entryFrame.appendChild(commentContainer);
-    }
     
     // Helper function to create sections with enhanced formatting
     const createSection = (title: string, items: (DesignSystemElement | DetailedModifiedElement)[], icon: string) => {
@@ -1280,8 +1256,10 @@ async function addToFigma(changes: Changes): Promise<void> {
       // Items with enhanced display
       for (const item of items) {
         const itemText = figma.createText();
+        
         itemText.characters = formatElementForDisplay(item);
         itemText.fontSize = 12;
+        itemText.lineHeight = { unit: "PERCENT", value: 160 };
         itemText.fontName = { family: "Inter", style: "Regular" };
         itemText.fills = [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.4 } }];
         
@@ -1322,6 +1300,33 @@ async function addToFigma(changes: Changes): Promise<void> {
     [addedSection, modifiedSection, removedSection].forEach(section => {
       if (section) entryFrame.appendChild(section);
     });
+
+    // Add comment if provided
+    if (changes.comment) {
+      const commentText = figma.createText();
+      const wrappedComment = wrapText(changes.comment, 60);
+      commentText.characters = `💬 ${wrappedComment}`;
+      commentText.fontSize = 14;
+      commentText.lineHeight = { unit: "PERCENT", value: 160 };
+      commentText.fontName = { family: "Inter", style: "Regular" };
+      commentText.fills = [{ type: "SOLID", color: { r: 0.2, g: 0.2, b: 0.2 } }];
+      
+      // Create comment container for better styling
+      const commentContainer = figma.createFrame();
+      commentContainer.layoutMode = "VERTICAL";
+      commentContainer.primaryAxisSizingMode = "AUTO";
+      commentContainer.counterAxisSizingMode = "AUTO";
+      commentContainer.layoutAlign = "STRETCH";
+      commentContainer.paddingTop = 8;
+      commentContainer.paddingBottom = 8;
+      commentContainer.paddingLeft = 12;
+      commentContainer.paddingRight = 12;
+      commentContainer.cornerRadius = 4;
+      commentContainer.fills = [{ type: "SOLID", color: { r: 0.97, g: 0.99, b: 1 } }];
+      
+      commentContainer.appendChild(commentText);
+      entryFrame.appendChild(commentContainer);
+    }
     
     // Add to container
     if (mainContainer.children.length > 0) {
@@ -1347,6 +1352,23 @@ async function addToFigma(changes: Changes): Promise<void> {
       message: 'Failed to add to Figma: ' + (error instanceof Error ? error.message : String(error))
     });
   }
+}
+
+function wrapText(text: string, maxLength: number): string {
+  const words = text.split(' ');
+  let result = '';
+  let line = '';
+
+  for (const word of words) {
+    if ((line + word).length > maxLength) {
+      result += line.trimEnd() + '\n';
+      line = '';
+    }
+    line += word + ' ';
+  }
+
+  result += line.trimEnd(); // Последняя строка
+  return result;
 }
 
 // ======================== MESSAGE HANDLER ========================
