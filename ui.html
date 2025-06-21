@@ -5,10 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Design System Tracker</title>
   <style>
+    /**
+     * Global CSS reset and box-sizing for consistent rendering
+     * across all browsers and elements
+     */
     * {
       box-sizing: border-box;
     }
 
+    /**
+     * Base body styling with system fonts and layout structure
+     * Uses flexbox for full-height layout management
+     */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
@@ -22,6 +30,10 @@
       flex-direction: column;
     }
 
+    /**
+     * Main container for the entire application layout
+     * Manages vertical spacing and full-height distribution
+     */
     .container {
       display: flex;
       flex-direction: column;
@@ -33,6 +45,10 @@
       max-width: 100%;
     }
 
+    /**
+     * Scrollable content area that contains the main UI elements
+     * Handles overflow with custom scrollbar styling
+     */
     .content-container {
       display: flex;
       flex-direction: column;
@@ -41,7 +57,10 @@
       overflow-y: auto;
     }
 
-    /* Минималистичный скролл бар */
+    /**
+     * Custom webkit scrollbar styling for modern, minimal appearance
+     * Applies to the main content container
+     */
     .content-container::-webkit-scrollbar {
       width: 4px;
     }
@@ -60,12 +79,18 @@
       background: #a0a0a0;
     }
 
-    /* Для Firefox */
+    /**
+     * Firefox scrollbar styling for cross-browser consistency
+     */
     .content-container {
       scrollbar-width: thin;
       scrollbar-color: #d0d0d0 transparent;
     }
 
+    /**
+     * Primary heading style with optimized typography
+     * Uses negative letter-spacing for better visual density
+     */
     .title {
       font-size: 20px;
       font-weight: 600;
@@ -74,6 +99,9 @@
       letter-spacing: -0.02em;
     }
 
+    /**
+     * Secondary heading style for section titles
+     */
     .subtitle {
       font-size: 16px;
       font-weight: 500;
@@ -81,12 +109,19 @@
       color: #1a1a1a;
     }
 
+    /**
+     * Generic section container with consistent spacing
+     */
     .section {
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
 
+    /**
+     * Section header styling with uppercase transformation
+     * Used for category labels and section dividers
+     */
     .section-header {
       font-size: 14px;
       font-weight: 600;
@@ -97,6 +132,10 @@
       font-size: 11px;
     }
 
+    /**
+     * Container for item lists with subtle background and border radius
+     * Creates visual grouping for related elements
+     */
     .items-container {
       display: flex;
       flex-direction: column;
@@ -107,6 +146,10 @@
       overflow: hidden;
     }
 
+    /**
+     * Individual item styling within lists
+     * Provides consistent spacing and typography for list elements
+     */
     .item {
       display: flex;
       gap: 12px;
@@ -118,10 +161,18 @@
       border-bottom: 1px solid #f0f0f0;
     }
 
+    /**
+     * Remove border from the last item in a list
+     * for cleaner visual appearance
+     */
     .item:last-child {
       border-bottom: none;
     }
 
+    /**
+     * Type indicator styling for items
+     * Shows element type with consistent formatting
+     */
     .item-type {
       font-weight: 500;
       color: #888888;
@@ -131,12 +182,20 @@
       min-width: 60px;
     }
 
+    /**
+     * Item name styling with flexible width
+     * Allows names to expand and wrap as needed
+     */
     .item-name {
       font-weight: 400;
       color: #1a1a1a;
       flex: 1;
     }
 
+    /**
+     * Action buttons container with consistent spacing
+     * Fixed at bottom of interface with visual separation
+     */
     .actions-container {
       display: flex;
       flex-direction: column;
@@ -146,6 +205,10 @@
       padding-top: 16px;
     }
 
+    /**
+     * Base button styling with hover states and transitions
+     * Provides consistent interactive elements throughout the UI
+     */
     .button {
       display: flex;
       justify-content: center;
@@ -163,22 +226,36 @@
       color: #1a1a1a;
     }
 
+    /**
+     * Button hover state for improved user feedback
+     */
     .button:hover {
       background: #f8f8f8;
       border-color: #d0d0d0;
     }
 
+    /**
+     * Primary button variant with brand color
+     * Used for main actions and call-to-action elements
+     */
     .button-primary {
       background: #007AFF;
       color: white;
       border-color: #007AFF;
     }
 
+    /**
+     * Primary button hover state with darker shade
+     */
     .button-primary:hover {
       background: #0056CC;
       border-color: #0056CC;
     }
 
+    /**
+     * Disabled button state styling
+     * Provides visual feedback for non-interactive buttons
+     */
     .button:disabled {
       opacity: 0.4;
       cursor: not-allowed;
@@ -187,17 +264,29 @@
       border-color: #e0e0e0;
     }
 
+    /**
+     * Disabled button hover state override
+     * Prevents hover effects on disabled buttons
+     */
     .button:disabled:hover {
       background: #f5f5f5;
       border-color: #e0e0e0;
     }
 
+    /**
+     * Element count display styling
+     * Shows metadata with subdued appearance
+     */
     .element-count {
       font-size: 12px;
       color: #888888;
       margin: 0;
     }
 
+    /**
+     * Centered message container for loading and empty states
+     * Provides consistent layout for informational content
+     */
     .center-message {
       display: flex;
       flex-direction: column;
@@ -209,6 +298,10 @@
       padding: 32px 24px;
     }
 
+    /**
+     * Message text styling for informational content
+     * Constrained width for better readability
+     */
     .message-text {
       font-size: 14px;
       color: #666666;
@@ -217,6 +310,10 @@
       margin: 0;
     }
 
+    /**
+     * Loading spinner animation element
+     * CSS-only spinner with smooth rotation
+     */
     .loading-spinner {
       width: 24px;
       height: 24px;
@@ -226,11 +323,18 @@
       animation: spin 1s linear infinite;
     }
 
+    /**
+     * Keyframe animation for loading spinner rotation
+     */
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
     
+    /**
+     * Visual divider element for section separation
+     * Provides subtle visual breaks between content sections
+     */
     .divider {
       height: 1px;
       background-color: #f0f0f0;
@@ -238,6 +342,10 @@
       width: 100%;
     }
     
+    /**
+     * No changes message styling
+     * Used when no modifications are detected
+     */
     .no-changes {
       font-size: 13px;
       color: #888888;
@@ -246,6 +354,10 @@
       text-align: center;
     }
     
+    /**
+     * Base badge styling for count indicators
+     * Provides consistent visual treatment for numeric badges
+     */
     .badge {
       display: inline-flex;
       align-items: center;
@@ -259,21 +371,37 @@
       margin-left: 8px;
     }
     
+    /**
+     * Badge variant for added elements
+     * Green color scheme for positive additions
+     */
     .badge-added {
       background-color: #E8F5E8;
       color: #2E7B32;
     }
     
+    /**
+     * Badge variant for changed elements
+     * Orange color scheme for modifications
+     */
     .badge-changed {
       background-color: #FFF4E6;
       color: #F57C00;
     }
     
+    /**
+     * Badge variant for removed elements
+     * Red color scheme for deletions
+     */
     .badge-removed {
       background-color: #FFEBEE;
       color: #D32F2F;
     }
 
+    /**
+     * Progress indicator container
+     * Houses progress bar and percentage display
+     */
     .progress-container {
       display: flex;
       flex-direction: column;
@@ -283,6 +411,10 @@
       margin-top: 12px;
     }
     
+    /**
+     * Progress bar track styling
+     * Background container for progress indicator
+     */
     .progress-bar {
       width: 100%;
       height: 4px;
@@ -291,6 +423,10 @@
       overflow: hidden;
     }
     
+    /**
+     * Progress bar fill element
+     * Animated width changes to show progress
+     */
     .progress-fill {
       height: 100%;
       background-color: #007AFF;
@@ -298,6 +434,9 @@
       border-radius: 2px;
     }
     
+    /**
+     * Progress percentage text styling
+     */
     .progress-text {
       font-size: 11px;
       font-weight: 500;
@@ -305,7 +444,10 @@
       text-align: center;
     }
 
-    /* Empty state improvements */
+    /**
+     * Empty state container for initial and no-content screens
+     * Provides consistent layout for informational states
+     */
     .empty-state {
       display: flex;
       flex-direction: column;
@@ -316,6 +458,10 @@
       gap: 12px;
     }
 
+    /**
+     * Empty state icon styling
+     * Circular background with emoji or icon content
+     */
     .empty-state-icon {
       width: 48px;
       height: 48px;
@@ -328,6 +474,10 @@
       color: #888888;
     }
 
+    /**
+     * Section header with count display
+     * Flexbox layout for title and badge alignment
+     */
     .section-with-count {
       display: flex;
       align-items: center;
@@ -335,6 +485,9 @@
       margin-bottom: 8px;
     }
 
+    /**
+     * Section title styling for headers with counts
+     */
     .section-title {
       font-size: 14px;
       font-weight: 600;
@@ -342,12 +495,18 @@
       margin: 0;
     }
 
-    /* Comment input styles */
+    /**
+     * Comment input container for layout management
+     */
     .comment-container {
       display: flex;
       flex-direction: column;
     }
     
+    /**
+     * Comment textarea styling with focus states
+     * Provides user input area for changelog comments
+     */
     .comment-input {
       width: 100%;
       min-height: 60px;
@@ -363,21 +522,33 @@
       transition: all 0.15s ease;
     }
     
+    /**
+     * Comment input hover state for better interactivity
+     */
     .comment-input:hover {
       border-color: #d0d0d0;
     }
     
+    /**
+     * Comment input focus state with brand color accent
+     */
     .comment-input:focus {
       outline: none;
       border-color: #007AFF;
       box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
     }
     
+    /**
+     * Placeholder text styling for comment input
+     */
     .comment-input::placeholder {
       color: #999999;
     }
 
-    /* Минималистичный скролл бар для поля комментария */
+    /**
+     * Custom scrollbar for comment textarea
+     * Thinner scrollbar for smaller input area
+     */
     .comment-input::-webkit-scrollbar {
       width: 3px;
     }
@@ -396,7 +567,10 @@
       background: #a0a0a0;
     }
 
-    /* Минималистичные общие стили для всех скролл баров */
+    /**
+     * Global scrollbar styling for all elements
+     * Ensures consistent scrollbar appearance throughout the app
+     */
     *::-webkit-scrollbar {
       width: 4px;
       height: 4px;
@@ -422,8 +596,9 @@
   </style>
 </head>
 <body>
+  <!-- Main application container -->
   <div class="container" id="app">
-    <!-- Content will be injected by JavaScript -->
+    <!-- Initial loading state - replaced by JavaScript -->
     <div class="center-message">
       <div class="loading-spinner"></div>
       <div class="message-text">Loading...</div>
@@ -431,7 +606,15 @@
   </div>
 
   <script>
-    // Format date to a readable string
+    // ======================== UTILITY FUNCTIONS ========================
+
+    /**
+     * Formats a timestamp into a human-readable date string.
+     * Uses locale-specific formatting for better user experience.
+     * 
+     * @param {number} timestamp - Unix timestamp in milliseconds
+     * @returns {string} Formatted date string (e.g., "Jan 15, 2024, 2:30 PM")
+     */
     function formatDate(timestamp) {
       const date = new Date(timestamp);
       return date.toLocaleString('en-US', {
@@ -443,7 +626,13 @@
       });
     }
 
-    // Format element type for display
+    /**
+     * Converts internal element types to user-friendly display names.
+     * Handles legacy type names and provides consistent capitalization.
+     * 
+     * @param {string} type - Internal element type identifier
+     * @returns {string} Human-readable type name
+     */
     function formatElementType(type) {
       switch (type) {
         case 'component':
@@ -468,7 +657,18 @@
       }
     }
 
-    // Format component name with variant properties if available
+    /**
+     * Formats component names with variant properties for better readability.
+     * Combines parent component name with variant property values.
+     * Filters out empty values and duplicate parent names.
+     * 
+     * @param {Object} item - Design system element object
+     * @param {string} item.name - Element name
+     * @param {string} item.type - Element type
+     * @param {Object} [item.variantProperties] - Variant property key-value pairs
+     * @param {string} [item.parentName] - Parent component set name
+     * @returns {string} Formatted component name with variants
+     */
     function formatComponentName(item) {
       if (item.type === 'component' && item.variantProperties && Object.keys(item.variantProperties).length > 0) {
         // If we have the parent component set name, use it instead of the component's name
@@ -496,7 +696,14 @@
       return item.name;
     }
     
-    // Render initialization screen
+    // ======================== SCREEN RENDERING FUNCTIONS ========================
+    
+    /**
+     * Renders the initial system setup screen.
+     * Displayed when no tracking data exists and system needs initialization.
+     * 
+     * @returns {string} HTML string for initialization screen
+     */
     function renderInitScreen() {
       return `
         <div class="content-container">
@@ -515,7 +722,13 @@
       `;
     }
     
-    // Render initialization complete screen
+    /**
+     * Renders the initialization completion screen.
+     * Shows success message and count of recorded elements.
+     * 
+     * @param {number} count - Number of elements successfully recorded
+     * @returns {string} HTML string for initialization complete screen
+     */
     function renderInitializedScreen(count) {
       return `
         <div class="content-container">
@@ -536,11 +749,18 @@
       `;
     }
     
-    // Render records view screen
+    /**
+     * Renders the records view screen showing all tracked elements.
+     * Groups elements by type and displays them in organized sections.
+     * 
+     * @param {Array} elements - Array of tracked design system elements
+     * @param {number} timestamp - Last update timestamp
+     * @returns {string} HTML string for records view screen
+     */
     function renderRecordsScreen(elements, timestamp) {
       const date = formatDate(timestamp);
       
-      // Group elements by type
+      // Group elements by type for organized display
       const groupedElements = {};
       elements.forEach(element => {
         if (!groupedElements[element.type]) {
@@ -549,7 +769,7 @@
         groupedElements[element.type].push(element);
       });
       
-      // Generate HTML for each group
+      // Generate HTML for each element type group
       let elementsHtml = '';
       Object.keys(groupedElements).sort().forEach(type => {
         const items = groupedElements[type];
@@ -589,11 +809,23 @@
       `;
     }
     
-    // Render main screen with changes
+    /**
+     * Renders the main application screen with change detection results.
+     * Displays added, modified, and removed elements with appropriate styling.
+     * Includes comment input and action buttons when changes are detected.
+     * 
+     * @param {Object} changes - Change detection results object
+     * @param {Array} changes.added - Array of newly added elements
+     * @param {Array} changes.modified - Array of modified elements
+     * @param {Array} changes.removed - Array of removed elements
+     * @param {number} timestamp - Last scan timestamp
+     * @param {boolean} hasChanges - Whether any changes were detected
+     * @returns {string} HTML string for main application screen
+     */
     function renderMainScreen(changes, timestamp, hasChanges) {
       const date = formatDate(timestamp);
       
-      // Log changes for debugging
+      // Log changes for debugging purposes
       console.log('Rendering main screen with changes:', {
         hasChanges,
         added: changes.added.length,
@@ -687,7 +919,14 @@
       `;
     }
     
-    // Render loading screen with progress
+    /**
+     * Renders a loading screen with optional progress indicator.
+     * Used during async operations to provide user feedback.
+     * 
+     * @param {string} [message='Processing...'] - Loading message to display
+     * @param {number|null} [progress=null] - Progress percentage (0-100) or null for indeterminate
+     * @returns {string} HTML string for loading screen
+     */
     function renderLoadingScreen(message = 'Processing...', progress = null) {
       return `
         <div class="center-message">
@@ -705,7 +944,13 @@
       `;
     }
     
-    // Render error screen
+    /**
+     * Renders an error screen with retry functionality.
+     * Displays error message and provides option to retry the failed operation.
+     * 
+     * @param {string} message - Error message to display to user
+     * @returns {string} HTML string for error screen
+     */
     function renderErrorScreen(message) {
       return `
         <div class="center-message">
@@ -716,11 +961,27 @@
       `;
     }
     
-    // Track the current changes data
+    // ======================== STATE MANAGEMENT ========================
+    
+    /**
+     * Current changes data from the last scan
+     * @type {Object|null}
+     */
     let currentChanges = null;
+    
+    /**
+     * Timeout handle for debounced refresh operations
+     * @type {number|null}
+     */
     let refreshTimeout = null;
     
-    // Debounced refresh function
+    // ======================== EVENT HANDLING ========================
+    
+    /**
+     * Debounced refresh function to prevent rapid successive calls.
+     * Cancels previous timeout and schedules a new refresh operation.
+     * Provides smooth user experience during multiple refresh requests.
+     */
     function debouncedRefresh() {
       if (refreshTimeout) {
         clearTimeout(refreshTimeout);
@@ -732,9 +993,13 @@
       }, 300);
     }
     
-    // Set up event listeners for buttons
+    /**
+     * Sets up event listeners for all interactive elements in the current UI.
+     * Dynamically attaches listeners based on elements present in the DOM.
+     * Called after each UI render to ensure proper event handling.
+     */
     function setupEventListeners() {
-      // Initialize System button
+      // Initialize System button - starts the tracking system
       const initializeButton = document.getElementById('initialize-button');
       if (initializeButton) {
         initializeButton.addEventListener('click', () => {
@@ -743,7 +1008,7 @@
         });
       }
       
-      // View Records button
+      // View Records button - shows all tracked elements
       const viewRecordsButton = document.getElementById('view-records-button');
       if (viewRecordsButton) {
         viewRecordsButton.addEventListener('click', () => {
@@ -752,7 +1017,7 @@
         });
       }
       
-      // OK button (from initialization complete)
+      // OK button - continues from initialization complete screen
       const okButton = document.getElementById('ok-button');
       if (okButton) {
         okButton.addEventListener('click', () => {
@@ -761,7 +1026,7 @@
         });
       }
       
-      // Back button (from records view)
+      // Back button - returns from records view to main screen
       const backButton = document.getElementById('back-button');
       if (backButton) {
         backButton.addEventListener('click', () => {
@@ -770,7 +1035,7 @@
         });
       }
       
-      // Refresh button
+      // Refresh button - rescans for changes
       const refreshButton = document.getElementById('refresh-button');
       if (refreshButton) {
         refreshButton.addEventListener('click', () => {
@@ -778,7 +1043,7 @@
         });
       }
       
-      // Add to Figma button
+      // Add to Figma button - creates changelog entry
       const addToFigmaButton = document.getElementById('add-to-figma-button');
       if (addToFigmaButton) {
         addToFigmaButton.addEventListener('click', () => {
@@ -799,7 +1064,7 @@
         });
       }
       
-      // Skip Version button
+      // Skip Version button - updates tracking without creating changelog
       const skipVersionButton = document.getElementById('skip-version-button');
       if (skipVersionButton) {
         skipVersionButton.addEventListener('click', () => {
@@ -813,18 +1078,27 @@
           }
         });
       }
-      
-
     }
     
-    // Helper to render UI and set up event listeners
+    /**
+     * Helper function to render UI and set up event listeners.
+     * Combines DOM manipulation with event binding for complete UI updates.
+     * 
+     * @param {string} html - HTML string to render in the app container
+     */
     function renderUI(html) {
       const appElement = document.getElementById('app');
       appElement.innerHTML = html;
       setupEventListeners();
     }
 
-    // Listen for messages from the plugin
+    // ======================== MESSAGE HANDLING ========================
+
+    /**
+     * Main message handler for plugin communication.
+     * Processes messages from the plugin's main thread and updates UI accordingly.
+     * Handles all plugin states and user interactions.
+     */
     window.onmessage = (event) => {
       const message = event.data.pluginMessage;
       
@@ -832,57 +1106,57 @@
       
       switch (message.type) {
         case 'init':
-          // Show initialization screen
+          // Show initialization screen when no tracking data exists
           renderUI(renderInitScreen());
           break;
           
         case 'initialized':
-          // Show initialization complete screen
+          // Show initialization complete screen with element count
           renderUI(renderInitializedScreen(message.count));
           break;
           
         case 'scanComplete':
-          // Show main screen with no changes
+          // Show main screen with no changes detected
           currentChanges = { added: [], modified: [], removed: [] };
           renderUI(renderMainScreen(currentChanges, Date.now(), false));
           break;
           
         case 'changes':
-          // Show main screen with changes
+          // Show main screen with detected changes
           currentChanges = message.changes;
           renderUI(renderMainScreen(message.changes, message.timestamp, message.hasChanges));
           break;
           
         case 'records':
-          // Show records screen
+          // Show records screen with all tracked elements
           renderUI(renderRecordsScreen(message.elements, message.timestamp));
           break;
           
         case 'addedToFigma':
-          // Reset current changes and show no changes state
+          // Reset after successful changelog creation
           currentChanges = { added: [], modified: [], removed: [] };
           renderUI(renderMainScreen(currentChanges, Date.now(), false));
           break;
           
         case 'versionSkipped':
-          // Reset current changes and show no changes state
+          // Reset after skipping version update
           currentChanges = { added: [], modified: [], removed: [] };
           renderUI(renderMainScreen(currentChanges, Date.now(), false));
           break;
           
         case 'updated':
-          // Show main screen after update
+          // Refresh after tracking data update
           renderUI(renderLoadingScreen('Scanning for changes...'));
           parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
           break;
           
         case 'error':
-          // Show error screen
+          // Show error screen with retry option
           renderUI(renderErrorScreen(message.message));
           break;
           
         case 'progress':
-          // Show progress update
+          // Update loading screen with progress information
           renderUI(renderLoadingScreen(message.message, message.progress));
           break;
           
