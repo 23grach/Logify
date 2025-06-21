@@ -1344,7 +1344,7 @@
         clearTimeout(refreshTimeout);
       } else {
         // Show loading state immediately on first call
-        renderUI(renderLoadingScreen('Сканирование изменений...'));
+        renderUI(renderLoadingScreen('Scanning changes...'));
       }
       
       refreshTimeout = setTimeout(() => {
@@ -1407,28 +1407,28 @@
       // Initialize System button - starts the tracking system
       const initializeButton = document.getElementById(SELECTORS.INITIALIZE_BUTTON);
       addClickFeedback(initializeButton, () => {
-        renderUI(renderLoadingScreen('Инициализация системы...'));
+        renderUI(renderLoadingScreen('Initializing system...'));
         sendMessage({ type: MESSAGE_TYPES.INITIALIZE });
       });
       
       // View Records button - shows all tracked elements
       const viewRecordsButton = document.getElementById(SELECTORS.VIEW_RECORDS_BUTTON);
       addClickFeedback(viewRecordsButton, () => {
-        renderUI(renderLoadingScreen('Загрузка записей...'));
+        renderUI(renderLoadingScreen('Loading records...'));
         sendMessage({ type: MESSAGE_TYPES.VIEW_RECORDS });
       });
       
       // OK button - continues from initialization complete screen
       const okButton = document.getElementById(SELECTORS.OK_BUTTON);
       addClickFeedback(okButton, () => {
-        renderUI(renderLoadingScreen('Сканирование изменений...'));
+        renderUI(renderLoadingScreen('Scanning changes...'));
         sendMessage({ type: MESSAGE_TYPES.REFRESH });
       });
       
       // Back button - returns from records view to main screen
       const backButton = document.getElementById(SELECTORS.BACK_BUTTON);
       addClickFeedback(backButton, () => {
-        renderUI(renderLoadingScreen('Сканирование изменений...'));
+        renderUI(renderLoadingScreen('Scanning changes...'));
         sendMessage({ type: MESSAGE_TYPES.REFRESH });
       });
       
@@ -1482,7 +1482,7 @@
       const addToFigmaButton = document.getElementById(SELECTORS.ADD_TO_FIGMA_BUTTON);
       addClickFeedback(addToFigmaButton, () => {
         if (!currentChanges) {
-          renderUI(renderErrorScreen('Данные об изменениях недоступны'));
+          renderUI(renderErrorScreen('Change data is not available'));
           return;
         }
 
@@ -1496,7 +1496,7 @@
           return;
         }
         
-        renderUI(renderLoadingScreen('Добавление в Figma...'));
+        renderUI(renderLoadingScreen('Adding to Figma...'));
         sendMessage({ 
           type: MESSAGE_TYPES.ADD_TO_FIGMA,
           changes: currentChanges,
@@ -1508,11 +1508,11 @@
       const skipVersionButton = document.getElementById(SELECTORS.SKIP_VERSION_BUTTON);
       addClickFeedback(skipVersionButton, () => {
         if (!currentChanges) {
-          renderUI(renderErrorScreen('Данные об изменениях недоступны'));
+          renderUI(renderErrorScreen('Change data is not available'));
           return;
         }
         
-        renderUI(renderLoadingScreen('Пропуск версии...'));
+        renderUI(renderLoadingScreen('Skipping version...'));
         sendMessage({ type: MESSAGE_TYPES.SKIP_VERSION });
       });
     }

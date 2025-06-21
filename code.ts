@@ -626,7 +626,10 @@ class OptimizedCollector {
   /**
    * Generate a hash of the document structure for change detection
    */
-  private static getDocumentHash(): string {
+  private static async getDocumentHash(): Promise<string> {
+    // Ensure pages are loaded before accessing children
+    await figma.loadAllPagesAsync();
+    
     const pages = figma.root.children.map(page => ({
       id: page.id,
       name: page.name,
@@ -638,8 +641,8 @@ class OptimizedCollector {
   /**
    * Check if a full rescan is needed
    */
-  static needsFullRescan(): boolean {
-    const currentHash = this.getDocumentHash();
+  static async needsFullRescan(): Promise<boolean> {
+    const currentHash = await this.getDocumentHash();
     const hashChanged = currentHash !== this.documentHash;
     const timeElapsed = Date.now() - this.lastScanTime > CONFIG.PERFORMANCE.CACHE_DURATION;
     
@@ -658,7 +661,7 @@ class OptimizedCollector {
     const cacheKey = `elements_${this.documentHash}`;
     
     // Try cache first
-    if (!this.needsFullRescan()) {
+    if (!(await this.needsFullRescan())) {
       const cached = PerformanceCache.get<DesignSystemElement[]>(cacheKey);
       if (cached) {
         Logger.debug('Using cached design system elements', 'optimization');
@@ -667,7 +670,7 @@ class OptimizedCollector {
     }
     
     // Check if we should use incremental scanning
-    const totalElements = this.estimateElementCount();
+    const totalElements = await this.estimateElementCount();
     
     let elements: DesignSystemElement[];
     if (totalElements > CONFIG.PERFORMANCE.INCREMENTAL_SCAN_THRESHOLD) {
@@ -686,8 +689,11 @@ class OptimizedCollector {
   /**
    * Estimate total element count for deciding scan strategy
    */
-  private static estimateElementCount(): number {
+  private static async estimateElementCount(): Promise<number> {
     try {
+      // Ensure pages are loaded before accessing children
+      await this.ensurePagesLoaded();
+      
       const pages = figma.root.children;
       let estimate = 0;
       
@@ -2780,6 +2786,9 @@ async function addToFigma(changes: Changes): Promise<void> {
     await figma.loadFontAsync({ family: "Inter", style: "Regular" });
     await figma.loadFontAsync({ family: "Inter", style: "Medium" });
     await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+    
+    // Ensure pages are loaded before accessing children
+    await figma.loadAllPagesAsync();
     
     // Find or create the Logify page
     let changelogPage = figma.root.children.find(page => page.name === LOGIFY_PAGE_NAME);
