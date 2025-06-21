@@ -3,7 +3,27 @@
 *.log.*
 node_modules
 
+# Build outputs
 out/
 dist/
 code.js
+
+# Compiled test files
+tests/*.js
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Coverage reports
+coverage/
+.nyc_output/

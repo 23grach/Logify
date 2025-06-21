@@ -19,11 +19,11 @@
     "jsx": "react"
   },
   "include": [
-    "code.ts",
-    "code.test.ts",
-    "tests/**/*.ts"
+    "code.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "**/*.test.ts",
+    "tests/**/*"
   ]
 }
