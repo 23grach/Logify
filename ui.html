@@ -41,6 +41,31 @@
       overflow-y: auto;
     }
 
+    /* Минималистичный скролл бар */
+    .content-container::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .content-container::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .content-container::-webkit-scrollbar-thumb {
+      background: #d0d0d0;
+      border-radius: 2px;
+      transition: background 0.15s ease;
+    }
+
+    .content-container::-webkit-scrollbar-thumb:hover {
+      background: #a0a0a0;
+    }
+
+    /* Для Firefox */
+    .content-container {
+      scrollbar-width: thin;
+      scrollbar-color: #d0d0d0 transparent;
+    }
+
     .title {
       font-size: 20px;
       font-weight: 600;
@@ -350,6 +375,49 @@
     
     .comment-input::placeholder {
       color: #999999;
+    }
+
+    /* Минималистичный скролл бар для поля комментария */
+    .comment-input::-webkit-scrollbar {
+      width: 3px;
+    }
+
+    .comment-input::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .comment-input::-webkit-scrollbar-thumb {
+      background: #d0d0d0;
+      border-radius: 1px;
+      transition: background 0.15s ease;
+    }
+
+    .comment-input::-webkit-scrollbar-thumb:hover {
+      background: #a0a0a0;
+    }
+
+    /* Минималистичные общие стили для всех скролл баров */
+    *::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: #d0d0d0;
+      border-radius: 2px;
+      transition: background 0.15s ease;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: #a0a0a0;
+    }
+
+    *::-webkit-scrollbar-corner {
+      background: transparent;
     }
   </style>
 </head>
