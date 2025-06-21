@@ -216,9 +216,12 @@ const CONFIG = {
   
   // Performance configuration
   PERFORMANCE: {
-    SLOW_OPERATION_THRESHOLD: 1000, // milliseconds
-    BATCH_SIZE: 50, // elements per batch
-    MAX_CONCURRENT_OPERATIONS: 5,
+    SLOW_OPERATION_THRESHOLD: 500, // Reduced threshold for better UX
+    BATCH_SIZE: 100, // Increased batch size for better throughput
+    MAX_CONCURRENT_OPERATIONS: 3, // Reduced to prevent overload
+    CACHE_DURATION: 30000, // 30 seconds cache
+    DEBOUNCE_DELAY: 250, // Debounce user actions
+    INCREMENTAL_SCAN_THRESHOLD: 1000, // Switch to incremental scanning after this many elements
   },
   
   // Visual styling constants
@@ -476,6 +479,489 @@ class PerformanceMonitor {
    */
   static clearMetrics(): void {
     this.metrics = [];
+  }
+}
+
+// ========================================================================================
+// PERFORMANCE OPTIMIZATION & CACHING
+// ========================================================================================
+// This section contains performance optimizations and caching mechanisms to reduce
+// processing time and improve user experience.
+
+/**
+ * Simple cache implementation for expensive operations
+ */
+class PerformanceCache {
+  private static cache = new Map<string, { data: unknown; timestamp: number }>();
+  
+  static set<T>(key: string, data: T, ttl: number = CONFIG.PERFORMANCE.CACHE_DURATION): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now() + ttl
+    });
+  }
+  
+  static get<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    
+    if (Date.now() > entry.timestamp) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.data as T;
+  }
+  
+  static has(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return false;
+    
+    if (Date.now() > entry.timestamp) {
+      this.cache.delete(key);
+      return false;
+    }
+    
+    return true;
+  }
+  
+  static clear(): void {
+    this.cache.clear();
+  }
+  
+  static invalidatePattern(pattern: string): void {
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+/**
+ * Debounce utility to prevent excessive function calls
+ */
+class Debouncer {
+  private static timers = new Map<string, NodeJS.Timeout>();
+  
+  static debounce<T extends (...args: unknown[]) => unknown>(
+    key: string,
+    fn: T,
+    delay: number = CONFIG.PERFORMANCE.DEBOUNCE_DELAY
+  ): (...args: Parameters<T>) => void {
+    return (...args: Parameters<T>) => {
+      const existingTimer = this.timers.get(key);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+      
+      const timer = setTimeout(() => {
+        fn(...args);
+        this.timers.delete(key);
+      }, delay);
+      
+      this.timers.set(key, timer);
+    };
+  }
+  
+  static cancel(key: string): void {
+    const timer = this.timers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(key);
+    }
+  }
+}
+
+/**
+ * Optimized serializer for large objects with compression and chunking
+ */
+class _OptimizedSerializer {
+  /**
+   * Serialize large objects efficiently with chunking
+   */
+  static serializeChunked(obj: unknown, maxChunkSize: number = 50000): string[] {
+    const jsonString = JSON.stringify(obj);
+    const chunks: string[] = [];
+    
+    for (let i = 0; i < jsonString.length; i += maxChunkSize) {
+      chunks.push(jsonString.slice(i, i + maxChunkSize));
+    }
+    
+    return chunks;
+  }
+  
+  /**
+   * Deserialize chunked object data
+   */
+  static deserializeChunked(chunks: string[]): unknown {
+    const jsonString = chunks.join('');
+    return JSON.parse(jsonString);
+  }
+  
+  /**
+   * Smart serialization that only includes changed properties
+   */
+  static serializeDelta(previous: Record<string, unknown>, current: Record<string, unknown>): Record<string, unknown> {
+    const delta: Record<string, unknown> = {};
+    
+    for (const key in current) {
+      if (current[key] !== previous?.[key]) {
+        delta[key] = current[key];
+      }
+    }
+    
+    return delta;
+  }
+}
+
+/**
+ * Optimized element collector with caching and incremental updates
+ */
+class OptimizedCollector {
+  private static lastScanTime = 0;
+  private static documentHash = '';
+  private static elementCache = new Map<string, DesignSystemElement>();
+  
+  /**
+   * Generate a hash of the document structure for change detection
+   */
+  private static getDocumentHash(): string {
+    const pages = figma.root.children.map(page => ({
+      id: page.id,
+      name: page.name,
+      childCount: page.children.length
+    }));
+    return hashObject(pages);
+  }
+  
+  /**
+   * Check if a full rescan is needed
+   */
+  static needsFullRescan(): boolean {
+    const currentHash = this.getDocumentHash();
+    const hashChanged = currentHash !== this.documentHash;
+    const timeElapsed = Date.now() - this.lastScanTime > CONFIG.PERFORMANCE.CACHE_DURATION;
+    
+    if (hashChanged) {
+      this.documentHash = currentHash;
+      return true;
+    }
+    
+    return timeElapsed;
+  }
+  
+  /**
+   * Optimized collection with smart caching and incremental scanning
+   */
+  static async collectOptimized(): Promise<DesignSystemElement[]> {
+    const cacheKey = `elements_${this.documentHash}`;
+    
+    // Try cache first
+    if (!this.needsFullRescan()) {
+      const cached = PerformanceCache.get<DesignSystemElement[]>(cacheKey);
+      if (cached) {
+        Logger.debug('Using cached design system elements', 'optimization');
+        return cached;
+      }
+    }
+    
+    // Check if we should use incremental scanning
+    const totalElements = this.estimateElementCount();
+    
+    let elements: DesignSystemElement[];
+    if (totalElements > CONFIG.PERFORMANCE.INCREMENTAL_SCAN_THRESHOLD) {
+      elements = await this.collectIncremental();
+    } else {
+      elements = await this.collectWithBatching();
+    }
+    
+    // Cache results
+    PerformanceCache.set(cacheKey, elements);
+    this.lastScanTime = Date.now();
+    
+    return elements;
+  }
+  
+  /**
+   * Estimate total element count for deciding scan strategy
+   */
+  private static estimateElementCount(): number {
+    try {
+      const pages = figma.root.children;
+      let estimate = 0;
+      
+      for (const page of pages) {
+        estimate += page.children.length * 10; // Rough estimate
+      }
+      
+      return estimate;
+    } catch {
+      return 0;
+    }
+  }
+  
+  /**
+   * Incremental collection for large documents
+   */
+  private static async collectIncremental(): Promise<DesignSystemElement[]> {
+    Logger.info('Using incremental scanning for large document', 'optimization');
+    const elements: DesignSystemElement[] = [];
+    const batchSize = Math.floor(CONFIG.PERFORMANCE.BATCH_SIZE / 2); // Smaller batches for large docs
+    
+    // Load pages only once
+    await this.ensurePagesLoaded();
+    
+    // Process each page separately to prevent memory issues
+    for (const page of figma.root.children) {
+      try {
+        // Set current page for faster operations
+        await figma.setCurrentPageAsync(page);
+        
+        const pageElements = await this.collectPageElements(page, batchSize);
+        elements.push(...pageElements);
+        
+        // Yield control to prevent blocking
+        await new Promise(resolve => setTimeout(resolve, 10));
+        
+      } catch (error) {
+        Logger.warn(`Failed to process page ${page.name}: ${error}`, 'optimization');
+      }
+    }
+    
+    // Collect document-level elements (styles, variables)
+    const documentElements = await this.collectDocumentElements();
+    elements.push(...documentElements);
+    
+    return elements;
+  }
+  
+  /**
+   * Collect elements from a specific page
+   */
+  private static async collectPageElements(page: PageNode, batchSize: number): Promise<DesignSystemElement[]> {
+    const elements: DesignSystemElement[] = [];
+    
+    // Find components in batches
+    const components = page.findAllWithCriteria({ types: ['COMPONENT'] });
+    for (let i = 0; i < components.length; i += batchSize) {
+      const batch = components.slice(i, i + batchSize);
+      const batchElements = await this.processBatch(batch, 'component');
+      elements.push(...batchElements);
+      
+      if (i % (batchSize * 3) === 0) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    }
+    
+    // Find component sets in batches
+    const componentSets = page.findAllWithCriteria({ types: ['COMPONENT_SET'] });
+    for (let i = 0; i < componentSets.length; i += batchSize) {
+      const batch = componentSets.slice(i, i + batchSize);
+      const batchElements = await this.processBatch(batch, 'componentSet');
+      elements.push(...batchElements);
+      
+      if (i % (batchSize * 3) === 0) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    }
+    
+    return elements;
+  }
+  
+  /**
+   * Collect elements with batching for medium-sized documents
+   */
+  private static async collectWithBatching(): Promise<DesignSystemElement[]> {
+    Logger.info('Using batched scanning for document', 'optimization');
+    const batchSize = CONFIG.PERFORMANCE.BATCH_SIZE;
+    const elements: DesignSystemElement[] = [];
+    
+    // Load pages only once
+    await this.ensurePagesLoaded();
+    
+    // Collect components in batches
+    const components = figma.root.findAllWithCriteria({ types: ['COMPONENT'] });
+    for (let i = 0; i < components.length; i += batchSize) {
+      const batch = components.slice(i, i + batchSize);
+      const batchElements = await this.processBatch(batch, 'component');
+      elements.push(...batchElements);
+      
+      // Yield control periodically
+      if (i % (batchSize * 2) === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    
+    // Collect component sets in batches
+    const componentSets = figma.root.findAllWithCriteria({ types: ['COMPONENT_SET'] });
+    for (let i = 0; i < componentSets.length; i += batchSize) {
+      const batch = componentSets.slice(i, i + batchSize);
+      const batchElements = await this.processBatch(batch, 'componentSet');
+      elements.push(...batchElements);
+      
+      if (i % (batchSize * 2) === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    
+    // Collect document-level elements
+    const documentElements = await this.collectDocumentElements();
+    elements.push(...documentElements);
+    
+    return elements;
+  }
+  
+  /**
+   * Ensure pages are loaded with caching
+   */
+  private static async ensurePagesLoaded(): Promise<void> {
+    const cacheKey = 'pages_loaded';
+    if (!PerformanceCache.has(cacheKey)) {
+      await figma.loadAllPagesAsync();
+      PerformanceCache.set(cacheKey, true, 60000); // Cache for 1 minute
+    }
+  }
+  
+  /**
+   * Process a batch of nodes efficiently
+   */
+  private static async processBatch(
+    nodes: SceneNode[], 
+    type: 'component' | 'componentSet'
+  ): Promise<DesignSystemElement[]> {
+    const elements: DesignSystemElement[] = [];
+    
+    for (const node of nodes) {
+      try {
+        // Check cache first
+        const cacheKey = `${type}_${node.id}_${(node as FrameNode).width || 0}`;
+        let element = this.elementCache.get(cacheKey);
+        
+        if (!element) {
+          const serializedProperties = await serializeSceneNodeProperties(node);
+          element = {
+            id: node.id,
+            name: node.name,
+            type: type,
+            key: (node as ComponentNode | ComponentSetNode).key,
+            description: (node as ComponentNode | ComponentSetNode).description,
+            parentName: type === 'component' && node.parent?.type === 'COMPONENT_SET' 
+              ? node.parent.name : undefined,
+            ...serializedProperties
+          };
+          
+          // Cache the element
+          this.elementCache.set(cacheKey, element);
+        }
+        
+        elements.push(element);
+      } catch (error) {
+        Logger.warn(`Failed to process ${type} ${node.name}: ${error}`, 'optimization');
+      }
+    }
+    
+    return elements;
+  }
+  
+  /**
+   * Collect document-level elements (styles, variables)
+   */
+  private static async collectDocumentElements(): Promise<DesignSystemElement[]> {
+    const cacheKey = 'document_elements';
+    const cached = PerformanceCache.get<DesignSystemElement[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    
+    const elements: DesignSystemElement[] = [];
+    
+    // Collect all style types in parallel
+    const [textStyles, paintStyles, effectStyles] = await Promise.all([
+      figma.getLocalTextStylesAsync(),
+      figma.getLocalPaintStylesAsync(),
+      figma.getLocalEffectStylesAsync()
+    ]);
+    
+    // Process styles efficiently
+    for (const style of textStyles) {
+      elements.push({
+        id: style.id,
+        name: style.name,
+        type: 'textStyle',
+        key: style.key,
+        description: style.description,
+        ...serializeBaseStyleProperties(style)
+      });
+    }
+    
+    for (const style of paintStyles) {
+      elements.push({
+        id: style.id,
+        name: style.name,
+        type: 'colorStyle',
+        key: style.key,
+        description: style.description,
+        ...serializeBaseStyleProperties(style)
+      });
+    }
+    
+    for (const style of effectStyles) {
+      elements.push({
+        id: style.id,
+        name: style.name,
+        type: 'colorStyle',
+        key: style.key,
+        description: style.description,
+        ...serializeBaseStyleProperties(style)
+      });
+    }
+    
+    // Collect variables
+    const [collections, localVariables] = await Promise.all([
+      figma.variables.getLocalVariableCollectionsAsync(),
+      figma.variables.getLocalVariablesAsync()
+    ]);
+    
+    // Process collections
+    for (const collection of collections) {
+      elements.push({
+        id: collection.id,
+        name: collection.name,
+        type: 'variableCollection',
+        key: collection.key,
+        variableDefinitionHash: hashObject({
+          name: collection.name,
+          modes: collection.modes,
+          defaultModeId: collection.defaultModeId,
+          remote: collection.remote,
+          hiddenFromPublishing: collection.hiddenFromPublishing,
+        })
+      });
+    }
+    
+    // Process variables
+    for (const variable of localVariables) {
+      elements.push({
+        id: variable.id,
+        name: variable.name,
+        type: 'variable',
+        key: variable.key,
+        description: variable.description,
+        variableDefinitionHash: serializeVariableProperties(variable)
+      });
+    }
+    
+    PerformanceCache.set(cacheKey, elements, 60000); // Cache for 1 minute
+    return elements;
+  }
+  
+  /**
+   * Clear all caches
+   */
+  static clearCache(): void {
+    this.elementCache.clear();
+    PerformanceCache.clear();
   }
 }
 
@@ -1755,7 +2241,8 @@ function serializeBaseStyleProperties(style: BaseStyle): Partial<DesignSystemEle
  * 
  * @returns Promise resolving to array of serialized component elements
  */
-async function collectComponents(): Promise<DesignSystemElement[]> {
+// Legacy collection functions - kept for backward compatibility but deprecated
+async function _collectComponents(): Promise<DesignSystemElement[]> {
   const components: DesignSystemElement[] = [];
   
   await figma.loadAllPagesAsync();
@@ -1779,13 +2266,7 @@ async function collectComponents(): Promise<DesignSystemElement[]> {
   return components;
 }
 
-/**
- * Collects all component set nodes from the current Figma document.
- * Component sets contain multiple component variants and are tracked separately.
- * 
- * @returns Promise resolving to array of serialized component set elements
- */
-async function collectComponentSets(): Promise<DesignSystemElement[]> {
+async function _collectComponentSets(): Promise<DesignSystemElement[]> {
   const componentSets: DesignSystemElement[] = [];
   
   await figma.loadAllPagesAsync();
@@ -1808,13 +2289,7 @@ async function collectComponentSets(): Promise<DesignSystemElement[]> {
   return componentSets;
 }
 
-/**
- * Collects all style definitions from the current Figma document.
- * Includes text styles, paint styles, and effect styles for comprehensive design system tracking.
- * 
- * @returns Promise resolving to array of serialized style elements
- */
-async function collectStyles(): Promise<DesignSystemElement[]> {
+async function _collectStyles(): Promise<DesignSystemElement[]> {
   const styles: DesignSystemElement[] = [];
   
   // Text styles
@@ -1862,13 +2337,7 @@ async function collectStyles(): Promise<DesignSystemElement[]> {
   return styles;
 }
 
-/**
- * Collects all design variables and variable collections from the current Figma document.
- * Variables are used for design tokens and maintaining consistency across the design system.
- * 
- * @returns Promise resolving to array of serialized variable and collection elements
- */
-async function collectVariables(): Promise<DesignSystemElement[]> {
+async function _collectVariables(): Promise<DesignSystemElement[]> {
   const variables: DesignSystemElement[] = [];
   
   // Variable collections
@@ -1910,33 +2379,20 @@ async function collectVariables(): Promise<DesignSystemElement[]> {
 /**
  * Collects all design system elements from the current Figma document.
  * This is the main aggregation function that gathers components, component sets,
- * styles, and variables into a unified tracking dataset.
+ * styles, and variables into a unified tracking dataset with optimized performance.
  * 
  * @returns Promise resolving to comprehensive array of all design system elements
  */
 async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
   return await PerformanceMonitor.monitor('collectDesignSystemElements', async () => {
-    Logger.info('Starting design system element collection', 'collection');
+    Logger.info('Starting optimized design system element collection', 'collection');
     
-    // Load all pages first (required by Figma API for findAllWithCriteria)
-    await figma.loadAllPagesAsync();
+    // Use optimized collector with caching
+    const elements = await OptimizedCollector.collectOptimized();
     
-    // Collect all element types
-    const [components, componentSets, styles, variables] = await Promise.all([
-      collectComponents(),
-      collectComponentSets(),
-      collectStyles(),
-      collectVariables()
-    ]);
-    
-    const elements: DesignSystemElement[] = [];
-    elements.push(...components, ...componentSets, ...styles, ...variables);
-    
-    Logger.info(`Collected ${elements.length} design system elements`, 'collection', {
-      components: components.length,
-      componentSets: componentSets.length,
-      styles: styles.length,
-      variables: variables.length
+    Logger.info(`Collected ${elements.length} design system elements (optimized)`, 'collection', {
+      cached: !OptimizedCollector.needsFullRescan(),
+      totalElements: elements.length
     });
     
     return elements;
@@ -2525,9 +2981,14 @@ function wrapText(text: string, maxLength: number): string {
 // This section handles all communication between the plugin and UI, processing messages
 // and coordinating actions based on user interactions.
 
+// Create debounced versions of main operations
+const debouncedScanAndCompare = Debouncer.debounce('scanAndCompare', scanAndCompare, 200);
+const debouncedInitializeTracking = Debouncer.debounce('initializeTracking', initializeTracking, 100);
+
 /**
  * Handles messages from the plugin UI and dispatches them to appropriate handlers.
  * Provides comprehensive error handling and user feedback for all operations.
+ * Uses debouncing to prevent excessive operations and improve performance.
  * 
  * Supported message types:
  * - initialize: Set up initial tracking
@@ -2548,11 +3009,11 @@ figma.ui.onmessage = async (msg: unknown) => {
     
     switch (msg.type) {
       case 'initialize':
-        await initializeTracking();
+        debouncedInitializeTracking();
         break;
         
       case 'refresh':
-        await scanAndCompare();
+        debouncedScanAndCompare();
         break;
         
       case 'addToFigma': {

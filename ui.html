@@ -69,12 +69,13 @@
       display: flex;
       flex-direction: column;
       padding: var(--spacing-xl);
-      gap: var(--spacing-xl);
+      gap: var(--spacing-lg);
       width: 100%;
-      height: 100%;
-      justify-content: space-between;
+      height: 100vh;
+      min-height: 0;
       max-width: 100%;
       contain: layout style;
+      overflow: hidden;
     }
 
     /**
@@ -87,6 +88,10 @@
       gap: 16px;
       flex: 1;
       overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+      padding-bottom: 8px;
+      scroll-behavior: smooth;
     }
 
     /**
@@ -382,6 +387,12 @@
       gap: 8px;
       border-top: 1px solid #f0f0f0;
       padding-top: 16px;
+      margin-top: auto;
+      flex-shrink: 0;
+      background: var(--color-background);
+      position: sticky;
+      bottom: 0;
+      z-index: 10;
     }
 
     /**
@@ -680,6 +691,26 @@
     .comment-container {
       display: flex;
       flex-direction: column;
+      gap: var(--spacing-xs);
+      position: relative;
+    }
+
+    /**
+     * Character counter for comment input
+     */
+    .comment-counter {
+      font-size: 11px;
+      color: var(--color-text-muted);
+      text-align: right;
+      margin-top: 2px;
+    }
+
+    .comment-counter.warning {
+      color: var(--color-warning);
+    }
+
+    .comment-counter.error {
+      color: var(--color-error);
     }
     
     /**
@@ -689,6 +720,7 @@
     .comment-input {
       width: 100%;
       min-height: 60px;
+      max-height: 120px;
       padding: 12px 16px;
       border: 1px solid #e0e0e0;
       border-radius: 6px;
@@ -697,7 +729,8 @@
       line-height: 1.4;
       color: #1a1a1a;
       background: #ffffff;
-      resize: vertical;
+      resize: none;
+      overflow-y: auto;
       transition: all 0.15s ease;
     }
     
@@ -795,8 +828,11 @@
       /** Maximum allowed length for user comments */
       MAX_COMMENT_LENGTH: 500,
       
-      /** Debounce delay for refresh operations in milliseconds */
-      REFRESH_DEBOUNCE_DELAY: 300,
+      /** Debounce delay for refresh operations in milliseconds (optimized) */
+      REFRESH_DEBOUNCE_DELAY: 150,
+      
+      /** Immediate feedback delay for button clicks */
+      CLICK_FEEDBACK_DELAY: 50,
       
       /** Maximum width for message text containers */
       MESSAGE_TEXT_MAX_WIDTH: 280,
@@ -1196,7 +1232,11 @@
                 maxlength="${CONFIG.MAX_COMMENT_LENGTH}"
                 aria-label="Change description comment"
                 aria-describedby="comment-help"
+                rows="3"
               ></textarea>
+              <div class="comment-counter" id="comment-counter">
+                <span id="comment-count">0</span>/${CONFIG.MAX_COMMENT_LENGTH} characters
+              </div>
               <div id="comment-help" class="sr-only">
                 Optional description for this changelog entry, maximum ${CONFIG.MAX_COMMENT_LENGTH} characters
               </div>
@@ -1289,18 +1329,33 @@
     // ======================== EVENT HANDLING ========================
     
     /**
-     * Debounced refresh function to prevent rapid successive calls.
-     * Cancels previous timeout and schedules a new refresh operation.
-     * Provides smooth user experience during multiple refresh requests.
+     * Optimized debounced refresh function to prevent rapid successive calls.
+     * Provides immediate UI feedback while debouncing actual operations.
      */
     function debouncedRefresh() {
+      // Immediate visual feedback
+      const refreshButton = document.getElementById(SELECTORS.REFRESH_BUTTON);
+      if (refreshButton) {
+        refreshButton.style.opacity = '0.6';
+        refreshButton.disabled = true;
+      }
+      
       if (refreshTimeout) {
         clearTimeout(refreshTimeout);
+      } else {
+        // Show loading state immediately on first call
+        renderUI(renderLoadingScreen('Сканирование изменений...'));
       }
       
       refreshTimeout = setTimeout(() => {
-        renderUI(renderLoadingScreen('Scanning for changes...'));
+        // Re-enable button
+        if (refreshButton) {
+          refreshButton.style.opacity = '';
+          refreshButton.disabled = false;
+        }
+        
         sendMessage({ type: MESSAGE_TYPES.REFRESH });
+        refreshTimeout = null;
       }, CONFIG.REFRESH_DEBOUNCE_DELAY);
     }
 
@@ -1320,6 +1375,30 @@
     }
     
     /**
+     * Provides immediate visual feedback when a button is clicked
+     */
+    function addClickFeedback(button, callback) {
+      if (!button) return;
+      
+      button.addEventListener('click', (e) => {
+        // Immediate visual feedback
+        button.style.transform = 'scale(0.98)';
+        button.style.opacity = '0.8';
+        
+        // Reset after short delay
+        setTimeout(() => {
+          button.style.transform = '';
+          button.style.opacity = '';
+        }, CONFIG.CLICK_FEEDBACK_DELAY);
+        
+        // Execute callback after feedback
+        setTimeout(() => {
+          callback(e);
+        }, CONFIG.CLICK_FEEDBACK_DELAY);
+      });
+    }
+
+    /**
      * Sets up event listeners for all interactive elements in the current UI.
      * Dynamically attaches listeners based on elements present in the DOM.
      * Called after each UI render to ensure proper event handling.
@@ -1327,89 +1406,115 @@
     function setupEventListeners() {
       // Initialize System button - starts the tracking system
       const initializeButton = document.getElementById(SELECTORS.INITIALIZE_BUTTON);
-      if (initializeButton) {
-        initializeButton.addEventListener('click', () => {
-          renderUI(renderLoadingScreen('Initializing system...'));
-          sendMessage({ type: MESSAGE_TYPES.INITIALIZE });
-        });
-      }
+      addClickFeedback(initializeButton, () => {
+        renderUI(renderLoadingScreen('Инициализация системы...'));
+        sendMessage({ type: MESSAGE_TYPES.INITIALIZE });
+      });
       
       // View Records button - shows all tracked elements
       const viewRecordsButton = document.getElementById(SELECTORS.VIEW_RECORDS_BUTTON);
-      if (viewRecordsButton) {
-        viewRecordsButton.addEventListener('click', () => {
-          renderUI(renderLoadingScreen('Loading records...'));
-          sendMessage({ type: MESSAGE_TYPES.VIEW_RECORDS });
-        });
-      }
+      addClickFeedback(viewRecordsButton, () => {
+        renderUI(renderLoadingScreen('Загрузка записей...'));
+        sendMessage({ type: MESSAGE_TYPES.VIEW_RECORDS });
+      });
       
       // OK button - continues from initialization complete screen
       const okButton = document.getElementById(SELECTORS.OK_BUTTON);
-      if (okButton) {
-        okButton.addEventListener('click', () => {
-          renderUI(renderLoadingScreen('Scanning for changes...'));
-          sendMessage({ type: MESSAGE_TYPES.REFRESH });
-        });
-      }
+      addClickFeedback(okButton, () => {
+        renderUI(renderLoadingScreen('Сканирование изменений...'));
+        sendMessage({ type: MESSAGE_TYPES.REFRESH });
+      });
       
       // Back button - returns from records view to main screen
       const backButton = document.getElementById(SELECTORS.BACK_BUTTON);
-      if (backButton) {
-        backButton.addEventListener('click', () => {
-          renderUI(renderLoadingScreen('Scanning for changes...'));
-          sendMessage({ type: MESSAGE_TYPES.REFRESH });
-        });
-      }
+      addClickFeedback(backButton, () => {
+        renderUI(renderLoadingScreen('Сканирование изменений...'));
+        sendMessage({ type: MESSAGE_TYPES.REFRESH });
+      });
       
       // Refresh button - rescans for changes
       const refreshButton = document.getElementById(SELECTORS.REFRESH_BUTTON);
-      if (refreshButton) {
-        refreshButton.addEventListener('click', () => {
-          debouncedRefresh();
-        });
-      }
+      addClickFeedback(refreshButton, () => {
+        debouncedRefresh();
+      });
       
+      // Comment input character counter
+      const commentInput = document.getElementById(SELECTORS.COMMENT_INPUT);
+      if (commentInput) {
+        const updateCharacterCount = () => {
+          const count = commentInput.value.length;
+          const counter = document.getElementById('comment-count');
+          const counterContainer = document.getElementById('comment-counter');
+          
+          if (counter) {
+            counter.textContent = count;
+          }
+          
+          if (counterContainer) {
+            counterContainer.className = 'comment-counter';
+            if (count > CONFIG.MAX_COMMENT_LENGTH * 0.9) {
+              counterContainer.className += ' warning';
+            }
+            if (count >= CONFIG.MAX_COMMENT_LENGTH) {
+              counterContainer.className += ' error';
+            }
+          }
+        };
+        
+        commentInput.addEventListener('input', updateCharacterCount);
+        commentInput.addEventListener('paste', () => {
+          setTimeout(updateCharacterCount, 0);
+        });
+        
+        // Auto-resize textarea
+        const autoResize = () => {
+          commentInput.style.height = 'auto';
+          const newHeight = Math.min(commentInput.scrollHeight, 120);
+          commentInput.style.height = newHeight + 'px';
+        };
+        
+        commentInput.addEventListener('input', autoResize);
+        updateCharacterCount();
+        autoResize();
+      }
+
       // Add to Figma button - creates changelog entry
       const addToFigmaButton = document.getElementById(SELECTORS.ADD_TO_FIGMA_BUTTON);
-      if (addToFigmaButton) {
-        addToFigmaButton.addEventListener('click', () => {
-          if (!currentChanges) {
-            renderUI(renderErrorScreen('No changes data available'));
-            return;
-          }
+      addClickFeedback(addToFigmaButton, () => {
+        if (!currentChanges) {
+          renderUI(renderErrorScreen('Данные об изменениях недоступны'));
+          return;
+        }
 
-          // Get and validate comment from input field
-          const commentInput = document.getElementById(SELECTORS.COMMENT_INPUT);
-          const rawComment = commentInput ? commentInput.value : '';
-          const validation = validateComment(rawComment);
-          
-          if (!validation.isValid) {
-            renderUI(renderErrorScreen(validation.error));
-            return;
-          }
-          
-          renderUI(renderLoadingScreen('Adding to Figma...'));
-          sendMessage({ 
-            type: MESSAGE_TYPES.ADD_TO_FIGMA,
-            changes: currentChanges,
-            comment: validation.comment
-          });
+        // Get and validate comment from input field
+        const commentInput = document.getElementById(SELECTORS.COMMENT_INPUT);
+        const rawComment = commentInput ? commentInput.value : '';
+        const validation = validateComment(rawComment);
+        
+        if (!validation.isValid) {
+          renderUI(renderErrorScreen(validation.error));
+          return;
+        }
+        
+        renderUI(renderLoadingScreen('Добавление в Figma...'));
+        sendMessage({ 
+          type: MESSAGE_TYPES.ADD_TO_FIGMA,
+          changes: currentChanges,
+          comment: validation.comment
         });
-      }
+      });
       
       // Skip Version button - updates tracking without creating changelog
       const skipVersionButton = document.getElementById(SELECTORS.SKIP_VERSION_BUTTON);
-      if (skipVersionButton) {
-        skipVersionButton.addEventListener('click', () => {
-          if (!currentChanges) {
-            renderUI(renderErrorScreen('No changes data available'));
-            return;
-          }
-          
-          renderUI(renderLoadingScreen('Skipping version...'));
-          sendMessage({ type: MESSAGE_TYPES.SKIP_VERSION });
-        });
-      }
+      addClickFeedback(skipVersionButton, () => {
+        if (!currentChanges) {
+          renderUI(renderErrorScreen('Данные об изменениях недоступны'));
+          return;
+        }
+        
+        renderUI(renderLoadingScreen('Пропуск версии...'));
+        sendMessage({ type: MESSAGE_TYPES.SKIP_VERSION });
+      });
     }
     
     /**
