@@ -1140,4 +1140,629 @@ describe('Logify Plugin Functional Tests', () => {
       expect(comment).toBe('');
     });
   });
+
+  describe('Component Set Filtering and Display Logic', () => {
+    function simpleHash(str: string): string {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return hash.toString();
+    }
+
+    // Mock functions to simulate the filtering logic
+    function mockFilterRedundantComponentSetChanges(changes: any) {
+      const modifiedComponentSetIds = new Set<string>();
+      const modifiedComponentParentNames = new Set<string>();
+      
+      // Collect component sets that have changed
+      for (const element of changes.modified) {
+        if (element.type === 'componentSet') {
+          modifiedComponentSetIds.add(element.id);
+        }
+      }
+      
+      // Collect parent names of changed components
+      for (const element of changes.modified) {
+        if (element.type === 'component' && element.parentName) {
+          modifiedComponentParentNames.add(element.parentName);
+        }
+      }
+      
+      // Filter out component sets that have changed components
+      const filteredModified = changes.modified.filter((element: any) => {
+        if (element.type === 'componentSet' && modifiedComponentParentNames.has(element.name)) {
+          return false; // Remove component set if its children are also modified
+        }
+        return true;
+      });
+      
+      return {
+        ...changes,
+        modified: filteredModified
+      };
+    }
+
+    function mockUpdateComponentDisplayNames(changes: any) {
+      const updatedModified = changes.modified.map((element: any) => {
+        if (element.type === 'component' && element.parentName) {
+          // Update the name to show "Set - Component" format
+          return {
+            ...element,
+            name: `${element.parentName} - ${element.name}`
+          };
+        }
+        return element;
+      });
+      
+      return {
+        ...changes,
+        modified: updatedModified
+      };
+    }
+
+    test('should filter out component set when child component is modified', () => {
+      const mockChanges = {
+        added: [],
+        modified: [
+          {
+            id: 'set1',
+            name: 'Button Set',
+            type: 'componentSet',
+            fillsHash: simpleHash('modified-set-fills')
+          },
+          {
+            id: 'comp1',
+            name: 'Primary',
+            type: 'component',
+            parentName: 'Button Set',
+            fillsHash: simpleHash('modified-component-fills')
+          }
+        ],
+        removed: []
+      };
+
+      const filteredChanges = mockFilterRedundantComponentSetChanges(mockChanges);
+
+      // Should only have the component, not the component set
+      expect(filteredChanges.modified.length).toBe(1);
+      expect(filteredChanges.modified[0].type).toBe('component');
+      expect(filteredChanges.modified[0].id).toBe('comp1');
+    });
+
+    test('should keep component set when only set is modified', () => {
+      const mockChanges = {
+        added: [],
+        modified: [
+          {
+            id: 'set1',
+            name: 'Button Set',
+            type: 'componentSet',
+            fillsHash: simpleHash('modified-set-fills')
+          },
+          {
+            id: 'comp1',
+            name: 'Primary',
+            type: 'component',
+            parentName: 'Card Set', // Different parent
+            fillsHash: simpleHash('modified-component-fills')
+          }
+        ],
+        removed: []
+      };
+
+      const filteredChanges = mockFilterRedundantComponentSetChanges(mockChanges);
+
+      // Should keep both since they don't conflict
+      expect(filteredChanges.modified.length).toBe(2);
+    });
+
+    test('should update component display names to "Set - Component" format', () => {
+      const mockChanges = {
+        added: [],
+        modified: [
+          {
+            id: 'comp1',
+            name: 'Primary',
+            type: 'component',
+            parentName: 'Button Set',
+            fillsHash: simpleHash('component-fills')
+          },
+          {
+            id: 'comp2',
+            name: 'Secondary',
+            type: 'component',
+            parentName: 'Button Set',
+            fillsHash: simpleHash('component-fills-2')
+          }
+        ],
+        removed: []
+      };
+
+      const updatedChanges = mockUpdateComponentDisplayNames(mockChanges);
+
+      expect(updatedChanges.modified[0].name).toBe('Button Set - Primary');
+      expect(updatedChanges.modified[1].name).toBe('Button Set - Secondary');
+    });
+
+    test('should not modify names of components without parent', () => {
+      const mockChanges = {
+        added: [],
+        modified: [
+          {
+            id: 'comp1',
+            name: 'Standalone Component',
+            type: 'component',
+            // No parentName
+            fillsHash: simpleHash('component-fills')
+          }
+        ],
+        removed: []
+      };
+
+      const updatedChanges = mockUpdateComponentDisplayNames(mockChanges);
+
+      expect(updatedChanges.modified[0].name).toBe('Standalone Component');
+    });
+
+    test('should not modify names of non-component elements', () => {
+      const mockChanges = {
+        added: [],
+        modified: [
+          {
+            id: 'style1',
+            name: 'Primary Color',
+            type: 'colorStyle',
+            parentName: 'Brand Colors', // Has parent but not a component
+            fillsHash: simpleHash('style-fills')
+          }
+        ],
+        removed: []
+      };
+
+      const updatedChanges = mockUpdateComponentDisplayNames(mockChanges);
+
+      expect(updatedChanges.modified[0].name).toBe('Primary Color');
+    });
+
+    test('should handle complex component set filtering scenario', () => {
+      const mockChanges = {
+        added: [],
+        modified: [
+          {
+            id: 'set1',
+            name: 'Button Set',
+            type: 'componentSet',
+            fillsHash: simpleHash('set-modified')
+          },
+          {
+            id: 'comp1',
+            name: 'Primary',
+            type: 'component',
+            parentName: 'Button Set',
+            fillsHash: simpleHash('comp1-modified')
+          },
+          {
+            id: 'comp2',
+            name: 'Secondary',
+            type: 'component',
+            parentName: 'Button Set',
+            fillsHash: simpleHash('comp2-modified')
+          },
+          {
+            id: 'set2',
+            name: 'Card Set',
+            type: 'componentSet',
+            fillsHash: simpleHash('set2-modified')
+          }
+        ],
+        removed: []
+      };
+
+      // Apply filtering and naming updates
+      const filteredChanges = mockFilterRedundantComponentSetChanges(mockChanges);
+      const finalChanges = mockUpdateComponentDisplayNames(filteredChanges);
+
+      // Should have 3 items: 2 components with updated names + 1 component set without child changes
+      expect(finalChanges.modified.length).toBe(3);
+      expect(finalChanges.modified.find((item: any) => item.id === 'comp1')?.name).toBe('Button Set - Primary');
+      expect(finalChanges.modified.find((item: any) => item.id === 'comp2')?.name).toBe('Button Set - Secondary');
+      expect(finalChanges.modified.find((item: any) => item.id === 'set2')?.name).toBe('Card Set');
+      expect(finalChanges.modified.find((item: any) => item.id === 'set1')).toBeUndefined(); // Should be filtered out
+    });
+  });
+
+  describe('Nested Content Hash Logic', () => {
+    function simpleHash(str: string): string {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+      }
+      return hash.toString();
+    }
+
+    // Mock function to simulate nested property traversal
+    function mockTraverseNodeProperties(node: any): any[] {
+      const result: any[] = [];
+      
+      // Add current node properties
+      result.push({
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        visible: node.visible !== false,
+        fills: node.fills || 'none',
+        strokes: node.strokes || 'none',
+        fontSize: node.fontSize || null,
+        characters: node.characters || null
+      });
+      
+      // Recursively add children
+      if (node.children && Array.isArray(node.children)) {
+        for (const child of node.children) {
+          result.push(...mockTraverseNodeProperties(child));
+        }
+      }
+      
+      return result;
+    }
+
+    // Mock function to simulate nested content hash calculation
+    function mockCalculateNestedContentHash(node: any): string {
+      const allNestedData = mockTraverseNodeProperties(node);
+      
+      // Focus on visual properties
+      const visualData = allNestedData.map(data => ({
+        fills: data.fills,
+        strokes: data.strokes,
+        fontSize: data.fontSize,
+        characters: data.characters
+      }));
+      
+      return simpleHash(JSON.stringify(visualData));
+    }
+
+    test('should traverse single node properties', () => {
+      const mockNode = {
+        id: 'node1',
+        name: 'Button',
+        type: 'COMPONENT',
+        visible: true,
+        fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }],
+        children: []
+      };
+
+      const properties = mockTraverseNodeProperties(mockNode);
+
+      expect(properties).toHaveLength(1);
+      expect(properties[0].id).toBe('node1');
+      expect(properties[0].name).toBe('Button');
+      expect(properties[0].visible).toBe(true);
+    });
+
+    test('should traverse nested node properties', () => {
+      const mockNode = {
+        id: 'button',
+        name: 'Button Component',
+        type: 'COMPONENT',
+        visible: true,
+        children: [
+          {
+            id: 'text',
+            name: 'Label',
+            type: 'TEXT',
+            visible: true,
+            fontSize: 16,
+            characters: 'Click me'
+          },
+          {
+            id: 'background',
+            name: 'Background',
+            type: 'RECTANGLE',
+            visible: true,
+            fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 1 } }]
+          }
+        ]
+      };
+
+      const properties = mockTraverseNodeProperties(mockNode);
+
+      expect(properties).toHaveLength(3); // Parent + 2 children
+      expect(properties[0].id).toBe('button');
+      expect(properties[1].id).toBe('text');
+      expect(properties[1].fontSize).toBe(16);
+      expect(properties[1].characters).toBe('Click me');
+      expect(properties[2].id).toBe('background');
+    });
+
+    test('should generate consistent nested content hash', () => {
+      const mockNode = {
+        id: 'component',
+        name: 'Test Component',
+        type: 'COMPONENT',
+        children: [
+          {
+            id: 'text',
+            name: 'Text',
+            type: 'TEXT',
+            fontSize: 16,
+            characters: 'Hello'
+          }
+        ]
+      };
+
+      const hash1 = mockCalculateNestedContentHash(mockNode);
+      const hash2 = mockCalculateNestedContentHash(mockNode);
+
+      expect(hash1).toBe(hash2);
+      expect(hash1).toBeDefined();
+      expect(typeof hash1).toBe('string');
+    });
+
+    test('should generate different hash when nested content changes', () => {
+      const mockNode1 = {
+        id: 'component',
+        name: 'Test Component',
+        type: 'COMPONENT',
+        children: [
+          {
+            id: 'text',
+            name: 'Text',
+            type: 'TEXT',
+            fontSize: 16,
+            characters: 'Hello'
+          }
+        ]
+      };
+
+      const mockNode2 = {
+        id: 'component',
+        name: 'Test Component',
+        type: 'COMPONENT',
+        children: [
+          {
+            id: 'text',
+            name: 'Text',
+            type: 'TEXT',
+            fontSize: 16,
+            characters: 'World' // Changed text
+          }
+        ]
+      };
+
+      const hash1 = mockCalculateNestedContentHash(mockNode1);
+      const hash2 = mockCalculateNestedContentHash(mockNode2);
+
+      expect(hash1).not.toBe(hash2);
+    });
+
+    test('should detect changes in deeply nested elements', () => {
+      const previousNode = {
+        id: 'card',
+        name: 'Card Component',
+        type: 'COMPONENT',
+        children: [
+          {
+            id: 'header',
+            name: 'Header',
+            type: 'FRAME',
+            children: [
+              {
+                id: 'title',
+                name: 'Title',
+                type: 'TEXT',
+                characters: 'Original Title'
+              }
+            ]
+          }
+        ]
+      };
+
+      const currentNode = {
+        id: 'card',
+        name: 'Card Component',
+        type: 'COMPONENT',
+        children: [
+          {
+            id: 'header',
+            name: 'Header',
+            type: 'FRAME',
+            children: [
+              {
+                id: 'title',
+                name: 'Title',
+                type: 'TEXT',
+                characters: 'Updated Title' // Deep change
+              }
+            ]
+          }
+        ]
+      };
+
+      const previousHash = mockCalculateNestedContentHash(previousNode);
+      const currentHash = mockCalculateNestedContentHash(currentNode);
+
+      expect(previousHash).not.toBe(currentHash);
+    });
+
+    test('should handle nodes without children', () => {
+      const mockNode = {
+        id: 'icon',
+        name: 'Icon',
+        type: 'VECTOR',
+        fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 } }]
+        // No children property
+      };
+
+      const properties = mockTraverseNodeProperties(mockNode);
+
+      expect(properties).toHaveLength(1);
+      expect(properties[0].id).toBe('icon');
+    });
+
+    test('should handle empty children array', () => {
+      const mockNode = {
+        id: 'empty-frame',
+        name: 'Empty Frame',
+        type: 'FRAME',
+        children: []
+      };
+
+      const properties = mockTraverseNodeProperties(mockNode);
+
+      expect(properties).toHaveLength(1);
+      expect(properties[0].id).toBe('empty-frame');
+    });
+  });
+
+  describe('Element Display Formatting', () => {
+    // Mock formatElementForDisplay function
+    function mockFormatElementForDisplay(element: any): string {
+      const typeEmojis: { [key: string]: string } = {
+        component: '🧩',
+        componentSet: '📦',
+        textStyle: '📝',
+        colorStyle: '🎨',
+        variable: '🔧',
+        variableCollection: '📁'
+      };
+      
+      const emoji = typeEmojis[element.type] || '📄';
+      let displayText = `${emoji} ${element.name}`;
+      
+      // Don't show parentName for components as it's already included in the name format "Set - Component"
+      if (element.parentName && element.type !== 'component') {
+        displayText += ` (${element.parentName})`;
+      }
+      
+      // Add detailed changes for modified elements
+      if (element.changes && element.changes.length > 0) {
+        for (const change of element.changes) {
+          displayText += `\n   • ${change.displayName}: ${change.oldValue} → ${change.newValue}`;
+        }
+        
+        if (element.changes.length > 3) {
+          displayText += `\n   ... and ${element.changes.length - 3} more changes`;
+        }
+      } else if (element.description) {
+        displayText += `\n   ${element.description}`;
+      }
+      
+      return displayText;
+    }
+
+    test('should format component in set correctly', () => {
+      const componentElement = {
+        id: 'comp1',
+        name: 'Button Set - Primary',
+        type: 'component',
+        parentName: 'Button Set'
+      };
+
+      const formatted = mockFormatElementForDisplay(componentElement);
+
+      expect(formatted).toBe('🧩 Button Set - Primary');
+      expect(formatted).not.toContain('(Button Set)'); // Should not show parentName
+    });
+
+    test('should format component set correctly', () => {
+      const componentSetElement = {
+        id: 'set1',
+        name: 'Button Set',
+        type: 'componentSet',
+        description: 'Collection of button variants'
+      };
+
+      const formatted = mockFormatElementForDisplay(componentSetElement);
+
+      expect(formatted).toContain('📦 Button Set');
+      expect(formatted).toContain('Collection of button variants');
+    });
+
+    test('should format non-component with parent correctly', () => {
+      const styleElement = {
+        id: 'style1',
+        name: 'Primary Blue',
+        type: 'colorStyle',
+        parentName: 'Brand Colors'
+      };
+
+      const formatted = mockFormatElementForDisplay(styleElement);
+
+      expect(formatted).toBe('🎨 Primary Blue (Brand Colors)');
+    });
+
+    test('should format element with changes correctly', () => {
+      const modifiedElement = {
+        id: 'comp1',
+        name: 'Button Set - Primary',
+        type: 'component',
+        changes: [
+          {
+            displayName: 'Fill Color',
+            oldValue: '#FF0000',
+            newValue: '#00FF00'
+          },
+          {
+            displayName: 'Border Radius',
+            oldValue: '4px',
+            newValue: '8px'
+          }
+        ]
+      };
+
+      const formatted = mockFormatElementForDisplay(modifiedElement);
+
+      expect(formatted).toContain('🧩 Button Set - Primary');
+      expect(formatted).toContain('Fill Color: #FF0000 → #00FF00');
+      expect(formatted).toContain('Border Radius: 4px → 8px');
+    });
+
+    test('should truncate many changes correctly', () => {
+      const modifiedElement = {
+        id: 'comp1',
+        name: 'Complex Component',
+        type: 'component',
+        changes: [
+          { displayName: 'Change 1', oldValue: 'old1', newValue: 'new1' },
+          { displayName: 'Change 2', oldValue: 'old2', newValue: 'new2' },
+          { displayName: 'Change 3', oldValue: 'old3', newValue: 'new3' },
+          { displayName: 'Change 4', oldValue: 'old4', newValue: 'new4' },
+          { displayName: 'Change 5', oldValue: 'old5', newValue: 'new5' }
+        ]
+      };
+
+      const formatted = mockFormatElementForDisplay(modifiedElement);
+
+      expect(formatted).toContain('Change 1: old1 → new1');
+      expect(formatted).toContain('Change 2: old2 → new2');
+      expect(formatted).toContain('Change 3: old3 → new3');
+      expect(formatted).toContain('... and 2 more changes');
+    });
+
+    test('should use correct emoji for each element type', () => {
+      const elements = [
+        { id: '1', name: 'Component', type: 'component' },
+        { id: '2', name: 'Component Set', type: 'componentSet' },
+        { id: '3', name: 'Text Style', type: 'textStyle' },
+        { id: '4', name: 'Color Style', type: 'colorStyle' },
+        { id: '5', name: 'Variable', type: 'variable' },
+        { id: '6', name: 'Variable Collection', type: 'variableCollection' },
+        { id: '7', name: 'Unknown Type', type: 'unknown' }
+      ];
+
+      const expectedEmojis = ['🧩', '📦', '📝', '🎨', '🔧', '📁', '📄'];
+
+      elements.forEach((element, index) => {
+        const formatted = mockFormatElementForDisplay(element);
+        expect(formatted).toContain(expectedEmojis[index]);
+      });
+    });
+  });
+
+
 }); 

@@ -42,6 +42,7 @@ interface DesignSystemElement {
   sizeData?: string;
   effectsData?: string;
   typographyData?: string;
+  nestedContentHash?: string;
 }
 
 /**
@@ -165,7 +166,7 @@ function compressDataForStorage(data: TrackingData): Record<string, unknown> {
     childrenIds: 'ci', structureHash: 'st', layoutHash: 'lh', geometryHash: 'gh',
     appearanceHash: 'ah', borderHash: 'bh', typographyHash: 'th',
     variableUsageHash: 'vu', variableDefinitionHash: 'vd', interactionHash: 'ih',
-    instanceOverridesHash: 'io', exposedPropertiesHash: 'ep'
+    instanceOverridesHash: 'io', exposedPropertiesHash: 'ep', nestedContentHash: 'nc'
   };
 
   return {
@@ -193,7 +194,7 @@ function decompressDataFromStorage(compressedData: Record<string, unknown>): Tra
     ci: 'childrenIds', st: 'structureHash', lh: 'layoutHash', gh: 'geometryHash',
     ah: 'appearanceHash', bh: 'borderHash', th: 'typographyHash',
     vu: 'variableUsageHash', vd: 'variableDefinitionHash', ih: 'interactionHash',
-    io: 'instanceOverridesHash', ep: 'exposedPropertiesHash'
+    io: 'instanceOverridesHash', ep: 'exposedPropertiesHash', nc: 'nestedContentHash'
   };
 
   return {
@@ -695,20 +696,77 @@ function createChangesSummary(changes: PropertyChangeInfo[]): string {
 }
 
 /**
- * Calculate structure hash for a node
+ * Recursively traverse all nested children to collect their essential properties
+ */
+function traverseNodeProperties(node: SceneNode): Record<string, unknown>[] {
+  const nodeData: Record<string, unknown> = {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    visible: node.visible,
+    // Capture key visual properties that might change
+    fills: 'fills' in node && node.fills !== figma.mixed ? 
+      JSON.stringify(node.fills) : 'none',
+    strokes: 'strokes' in node ? 
+      JSON.stringify(node.strokes) : 'none',
+    effects: 'effects' in node ? 
+      JSON.stringify(node.effects) : 'none',
+    fontSize: node.type === 'TEXT' ? (node as TextNode).fontSize : null,
+    characters: node.type === 'TEXT' ? (node as TextNode).characters : null,
+    fontName: node.type === 'TEXT' ? JSON.stringify((node as TextNode).fontName) : null,
+    width: node.width,
+    height: node.height,
+    x: node.x,
+    y: node.y,
+    cornerRadius: 'cornerRadius' in node ? node.cornerRadius : null,
+    strokeWeight: 'strokeWeight' in node ? node.strokeWeight : null,
+  };
+
+  const allData = [nodeData];
+  
+  // Recursively traverse children if they exist
+  if ('children' in node && node.children.length > 0) {
+    const childrenMixin = node as BaseNode & ChildrenMixin;
+    for (const child of childrenMixin.children) {
+      allData.push(...traverseNodeProperties(child as SceneNode));
+    }
+  }
+  
+  return allData;
+}
+
+/**
+ * Calculate comprehensive structure hash including all nested layers
  */
 function calculateStructureHash(node: SceneNode): string {
   const hasChildren = 'children' in node && node.children.length > 0;
   if (!hasChildren) return '';
   
-  const childrenData = (node as BaseNode & ChildrenMixin).children.map((child: SceneNode) => ({
-    id: child.id,
-    name: child.name,
-    type: child.type,
-    visible: child.visible,
+  // Get all nested properties recursively
+  const allNestedData = traverseNodeProperties(node);
+  
+  return hashObject(allNestedData);
+}
+
+/**
+ * Calculate deep content hash for all nested layers' visual properties
+ */
+function calculateNestedContentHash(node: SceneNode): string {
+  const allNestedData = traverseNodeProperties(node);
+  
+  // Focus on visual properties that commonly change
+  const visualData = allNestedData.map(data => ({
+    fills: data.fills,
+    strokes: data.strokes,
+    effects: data.effects,
+    fontSize: data.fontSize,
+    characters: data.characters,
+    fontName: data.fontName,
+    cornerRadius: data.cornerRadius,
+    strokeWeight: data.strokeWeight,
   }));
   
-  return hashObject(childrenData);
+  return hashObject(visualData);
 }
 
 /**
@@ -723,6 +781,7 @@ async function serializeSceneNodeProperties(sceneNode: SceneNode): Promise<Parti
     geometryHash: serializeGeometryProperties(sceneNode),
     typographyHash: serializeTypographyProperties(sceneNode),
     structureHash: calculateStructureHash(sceneNode),
+    nestedContentHash: calculateNestedContentHash(sceneNode),
     
     // Detailed data for comparison
     fillsData: 'fills' in sceneNode && sceneNode.fills !== figma.mixed ? serializeFillDataDetailed(sceneNode.fills) : 'None',
@@ -944,6 +1003,84 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
 // ======================== COMPARISON FUNCTIONS ========================
 
 /**
+ * Filter out component set changes when their child components are also changed
+ */
+function filterRedundantComponentSetChanges(changes: Changes): Changes {
+  const modifiedComponentSetIds = new Set<string>();
+  const modifiedComponentParentNames = new Set<string>();
+  
+  // Collect component sets that have changed
+  for (const element of changes.modified) {
+    if (element.type === 'componentSet') {
+      modifiedComponentSetIds.add(element.id);
+    }
+  }
+  
+  // Collect parent names of changed components
+  for (const element of changes.modified) {
+    if (element.type === 'component' && element.parentName) {
+      modifiedComponentParentNames.add(element.parentName);
+    }
+  }
+  
+  // Filter out component sets that have changed components
+  const filteredModified = changes.modified.filter(element => {
+    if (element.type === 'componentSet' && modifiedComponentParentNames.has(element.name)) {
+      return false; // Remove component set if its children are also modified
+    }
+    return true;
+  });
+  
+  return {
+    ...changes,
+    modified: filteredModified
+  };
+}
+
+/**
+ * Update component display names to show "Set - Component" format when applicable
+ */
+function updateComponentDisplayNames(changes: Changes): Changes {
+  const updatedModified = changes.modified.map(element => {
+    if (element.type === 'component' && element.parentName) {
+      // Update the name to show "Set - Component" format
+      return {
+        ...element,
+        name: `${element.parentName} - ${element.name}`
+      };
+    }
+    return element;
+  });
+  
+  const updatedAdded = changes.added.map(element => {
+    if (element.type === 'component' && element.parentName) {
+      return {
+        ...element,
+        name: `${element.parentName} - ${element.name}`
+      };
+    }
+    return element;
+  });
+  
+  const updatedRemoved = changes.removed.map(element => {
+    if (element.type === 'component' && element.parentName) {
+      return {
+        ...element,
+        name: `${element.parentName} - ${element.name}`
+      };
+    }
+    return element;
+  });
+  
+  return {
+    ...changes,
+    modified: updatedModified,
+    added: updatedAdded,
+    removed: updatedRemoved
+  };
+}
+
+/**
  * Compare two arrays of elements and return changes with detailed analysis
  */
 function compareElements(previous: DesignSystemElement[], current: DesignSystemElement[]): Changes {
@@ -980,11 +1117,15 @@ function compareElements(previous: DesignSystemElement[], current: DesignSystemE
     }
   }
   
-  return changes;
+  // Filter redundant component set changes and update display names
+  const filteredChanges = filterRedundantComponentSetChanges(changes);
+  const finalChanges = updateComponentDisplayNames(filteredChanges);
+  
+  return finalChanges;
 }
 
 /**
- * Check if an element has changed by comparing hashes
+ * Check if an element has changed by comparing hashes including nested content
  */
 function hasElementChanged(previous: DesignSystemElement, current: DesignSystemElement): boolean {
   const hashFields = [
@@ -992,7 +1133,8 @@ function hasElementChanged(previous: DesignSystemElement, current: DesignSystemE
     'componentPropertiesHash', 'structureHash', 'layoutHash',
     'geometryHash', 'appearanceHash', 'borderHash', 'typographyHash',
     'variableUsageHash', 'variableDefinitionHash', 'interactionHash',
-    'instanceOverridesHash', 'exposedPropertiesHash', 'variantPropertiesHash'
+    'instanceOverridesHash', 'exposedPropertiesHash', 'variantPropertiesHash',
+    'nestedContentHash'
   ];
   
   return hashFields.some(field => previous[field as keyof DesignSystemElement] !== current[field as keyof DesignSystemElement]) ||
@@ -1136,7 +1278,8 @@ function formatElementForDisplay(element: DesignSystemElement | DetailedModified
   const emoji = typeEmojis[element.type] || '📄';
   let displayText = `${emoji} ${element.name}`;
   
-  if (element.parentName) {
+  // Don't show parentName for components as it's already included in the name format "Set - Component"
+  if (element.parentName && element.type !== 'component') {
     displayText += ` (${element.parentName})`;
   }
   
