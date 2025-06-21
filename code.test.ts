@@ -1,15 +1,28 @@
 /// <reference types="jest" />
 
+// Type definitions for mocks
+interface MockMessage {
+  type: string;
+  [key: string]: unknown;
+}
+
+interface MockFigmaNode {
+  id?: string;
+  name?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
 // Mock Figma API
 const mockFigma = {
   root: {
-    children: [] as any[],
+    children: [] as MockFigmaNode[],
     getSharedPluginData: jest.fn(),
     setSharedPluginData: jest.fn(),
   },
   ui: {
     postMessage: jest.fn(),
-    onmessage: null as ((msg: any) => void) | null,
+    onmessage: null as ((msg: MockMessage) => void) | null,
   },
   showUI: jest.fn(),
   notify: jest.fn(),
@@ -25,6 +38,7 @@ const mockFigma = {
 };
 
 // Mock global figma object
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (global as any).figma = mockFigma;
 
 // Import the code after mocking
@@ -307,7 +321,7 @@ describe('Logify Plugin Functional Tests', () => {
         appendChild: jest.fn()
       };
 
-      const mockEntryFrame = {
+      const _mockEntryFrame = {
         name: expect.stringContaining('Logify Entry'),
         layoutMode: 'VERTICAL',
         primaryAxisSizingMode: 'AUTO',
@@ -441,7 +455,7 @@ describe('Logify Plugin Functional Tests', () => {
   describe('Data Validation', () => {
     test('should validate design system elements', () => {
       // Test valid element
-      const validElement = {
+      const _validElement = {
         id: 'test1',
         name: 'Test Component',
         type: 'component',

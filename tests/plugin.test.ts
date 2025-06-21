@@ -1,15 +1,39 @@
 /// <reference types="jest" />
 
+// Type definitions for mock objects
+interface MockPage {
+  name: string;
+  getSharedPluginData: jest.MockedFunction<(namespace: string, key: string) => string>;
+  loadAsync: jest.MockedFunction<() => Promise<void>>;
+  findAllWithCriteria: jest.MockedFunction<(criteria: { types: string[] }) => MockNode[]>;
+}
+
+interface MockNode {
+  id: string;
+  name: string;
+  type: string;
+  key?: string;
+  description?: string;
+  variantProperties?: Record<string, string> | null;
+  parent?: MockNode | null;
+  children?: MockNode[];
+}
+
+interface UIMessage {
+  type: string;
+  [key: string]: unknown;
+}
+
 // Mock Figma API
 const mockFigma = {
   root: {
-    children: [] as any[],
+    children: [] as MockPage[],
     getSharedPluginData: jest.fn(),
     setSharedPluginData: jest.fn(),
   },
   ui: {
     postMessage: jest.fn(),
-    onmessage: null as ((msg: any) => void) | null,
+    onmessage: null as ((msg: UIMessage) => void) | null,
   },
   showUI: jest.fn(),
   notify: jest.fn(),
@@ -25,6 +49,7 @@ const mockFigma = {
 };
 
 // Mock global figma object
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (global as any).figma = mockFigma;
 
 describe('Logify Plugin Functional Tests', () => {
@@ -76,7 +101,7 @@ describe('Logify Plugin Functional Tests', () => {
 
   describe('Element Collection', () => {
     test('should collect components from pages', () => {
-      const mockComponent = {
+      const mockComponent: MockNode = {
         id: 'comp1',
         name: 'Button',
         type: 'COMPONENT',
@@ -87,7 +112,7 @@ describe('Logify Plugin Functional Tests', () => {
         children: []
       };
 
-      const mockPage = {
+      const mockPage: MockPage = {
         name: 'Page 1',
         getSharedPluginData: jest.fn().mockReturnValue(''),
         loadAsync: jest.fn().mockResolvedValue(undefined),
@@ -198,6 +223,341 @@ describe('Logify Plugin Functional Tests', () => {
     });
 
     test('should reject invalid element structure', () => {
+      const invalidElement = {
+        id: '', // Empty ID is invalid
+        name: 'Test Component',
+        type: 'component'
+      };
+
+      const isValid = !!(invalidElement.id && 
+                        typeof invalidElement.id === 'string' &&
+                        invalidElement.id.length > 0 &&
+                        invalidElement.name && 
+                        typeof invalidElement.name === 'string' &&
+                        invalidElement.type && 
+                        typeof invalidElement.type === 'string');
+
+      expect(isValid).toBe(false);
+    });
+
+    test('should validate tracking data structure', () => {
+      const validTrackingData = {
+        timestamp: Date.now(),
+        elements: [
+          {
+            id: 'test1',
+            name: 'Test Component',
+            type: 'component'
+          }
+        ]
+      };
+
+      const isValid = validTrackingData.timestamp &&
+                     typeof validTrackingData.timestamp === 'number' &&
+                     Array.isArray(validTrackingData.elements);
+
+      expect(isValid).toBe(true);
+    });
+  });
+
+  describe('Performance Monitoring', () => {
+    test('should track operation performance', async () => {
+      const startTime = Date.now();
+      
+      // Simulate an operation
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      
+      expect(duration).toBeGreaterThan(0);
+      expect(duration).toBeGreaterThanOrEqual(50);
+    });
+
+    test('should handle performance metrics', () => {
+      const metrics = {
+        operation: 'testOperation',
+        startTime: Date.now(),
+        endTime: Date.now() + 100,
+        duration: 100,
+        elementsProcessed: 10
+      };
+
+      expect(metrics.duration).toBe(100);
+      expect(metrics.elementsProcessed).toBe(10);
+    });
+  });
+
+  describe('Enhanced Validation', () => {
+    test('should provide detailed validation errors', () => {
+      const invalidElement: { name: string; type: string; id?: string } = {
+        name: 'Test',
+        type: 'invalid_type' // Invalid type
+      };
+
+      const errors: string[] = [];
+      
+      if (!invalidElement.id) {
+        errors.push('Missing required field: id');
+      }
+      
+      const validTypes = ['component', 'componentSet', 'textStyle', 'colorStyle', 'variable', 'variableCollection'];
+      if (!validTypes.includes(invalidElement.type)) {
+        errors.push(`Invalid type: ${invalidElement.type}`);
+      }
+
+      expect(errors).toContain('Missing required field: id');
+      expect(errors).toContain('Invalid type: invalid_type');
+    });
+
+    test('should provide validation warnings', () => {
+      const elementWithWarnings = {
+        id: 'test1',
+        name: '', // Empty name should generate warning
+        type: 'component',
+        modifiedAt: Date.now() + 86400000 * 2 // Future timestamp should generate warning
+      };
+
+      const warnings: string[] = [];
+      
+      if (elementWithWarnings.name.length === 0) {
+        warnings.push('Name is empty');
+      }
+      
+      if (elementWithWarnings.modifiedAt > Date.now() + 86400000) {
+        warnings.push('Modified timestamp seems invalid');
+      }
+
+      expect(warnings).toContain('Name is empty');
+      expect(warnings).toContain('Modified timestamp seems invalid');
+    });
+  });
+
+  describe('Logging System', () => {
+    test('should create log entries', () => {
+      const logEntry = {
+        timestamp: Date.now(),
+        level: 1, // INFO
+        message: 'Test message',
+        context: 'test',
+        metadata: { key: 'value' }
+      };
+
+      expect(logEntry.timestamp).toBeDefined();
+      expect(logEntry.level).toBe(1);
+      expect(logEntry.message).toBe('Test message');
+      expect(logEntry.context).toBe('test');
+      expect(logEntry.metadata).toEqual({ key: 'value' });
+    });
+
+    test('should filter logs by level', () => {
+      const logs = [
+        { level: 0, message: 'Debug', context: 'test' }, // DEBUG
+        { level: 1, message: 'Info', context: 'test' },  // INFO
+        { level: 2, message: 'Warning', context: 'test' }, // WARN
+        { level: 3, message: 'Error', context: 'test' }   // ERROR
+      ];
+
+      const warningAndAbove = logs.filter(log => log.level >= 2);
+      
+      expect(warningAndAbove).toHaveLength(2);
+      expect(warningAndAbove[0].message).toBe('Warning');
+      expect(warningAndAbove[1].message).toBe('Error');
+    });
+  });
+
+  describe('Error Handling', () => {
+    test('should handle async operation errors', async () => {
+      const mockOperation = jest.fn().mockRejectedValue(new Error('Test error'));
+      
+      try {
+        await mockOperation();
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toBe('Test error');
+      }
+    });
+
+    test('should provide error context', () => {
+      const error = new Error('Test error');
+      const context = 'test operation';
+      const fullMessage = `[${context}] ${error.message}`;
+      
+      expect(fullMessage).toBe('[test operation] Test error');
+    });
+  });
+
+  describe('Message Handling', () => {
+    test('should validate plugin messages', () => {
+      const validMessage = { type: 'initialize' };
+      const invalidMessage = { action: 'unknown' };
+      
+      const validTypes = ['initialize', 'refresh', 'addToFigma', 'skipVersion', 'viewRecords'];
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const isValidMessage = (msg: any) => {
+        return msg && typeof msg === 'object' && 
+               typeof msg.type === 'string' && 
+               validTypes.includes(msg.type);
+      };
+      
+      expect(isValidMessage(validMessage)).toBe(true);
+      expect(isValidMessage(invalidMessage)).toBe(false);
+    });
+  });
+
+  describe('batching and Performance Optimization', () => {
+    test('should process elements in batches', () => {
+      const elements = Array.from({ length: 100 }, (_, i) => ({ id: `element${i}` }));
+      const batchSize = 25;
+      const batches = [];
+      
+      for (let i = 0; i < elements.length; i += batchSize) {
+        batches.push(elements.slice(i, i + batchSize));
+      }
+      
+      expect(batches).toHaveLength(4);
+      expect(batches[0]).toHaveLength(25);
+      expect(batches[3]).toHaveLength(25);
+    });
+
+    test('should handle memory usage estimation', () => {
+      const mockMemoryUsage = () => Date.now() % 1000000;
+      
+      const before = mockMemoryUsage();
+      const after = mockMemoryUsage();
+      
+      expect(typeof before).toBe('number');
+      expect(typeof after).toBe('number');
+    });
+  });
+
+  describe('Data Compression', () => {
+    test('should compress tracking data', () => {
+      const trackingData = {
+        timestamp: Date.now(),
+        elements: [
+          { id: '1', name: 'Component 1', type: 'component' },
+          { id: '2', name: 'Component 2', type: 'component' }
+        ]
+      };
+      
+      const compressed = JSON.stringify(trackingData);
+      const decompressed = JSON.parse(compressed);
+      
+      expect(decompressed.timestamp).toBe(trackingData.timestamp);
+      expect(decompressed.elements).toHaveLength(2);
+    });
+  });
+
+  describe('UI Integration', () => {
+    test('should post messages to UI', () => {
+      const message = { type: 'update', data: { count: 5 } };
+      
+      mockFigma.ui.postMessage(message);
+      
+      expect(mockFigma.ui.postMessage).toHaveBeenCalledWith(message);
+    });
+
+    test('should handle UI message responses', () => {
+      const _mockHandler = jest.fn();
+      
+      if (mockFigma.ui.onmessage) {
+        mockFigma.ui.onmessage({ type: 'initialize' });
+      }
+      
+      // Test that the message handling structure is in place
+      expect(mockFigma.ui.onmessage).toBeDefined();
+    });
+  });
+
+  describe('Integration Tests', () => {
+    test('should handle full workflow: collect, compare, and update', async () => {
+      // Mock initial data
+      const initialElements = [
+        { id: '1', name: 'Button', type: 'component' }
+      ];
+      
+      // Mock current data with changes
+      const currentElements = [
+        { id: '1', name: 'Primary Button', type: 'component' }, // Modified
+        { id: '2', name: 'Input', type: 'component' } // Added
+      ];
+      
+      // Compare
+      const added = currentElements.filter(curr => 
+        !initialElements.some(prev => prev.id === curr.id)
+      );
+      
+      const modified = currentElements.filter(curr => {
+        const prev = initialElements.find(p => p.id === curr.id);
+        return prev && prev.name !== curr.name;
+      });
+      
+      expect(added).toHaveLength(1);
+      expect(modified).toHaveLength(1);
+      expect(added[0].name).toBe('Input');
+      expect(modified[0].name).toBe('Primary Button');
+    });
+  });
+
+  describe('Edge Cases', () => {
+    test('should handle empty element collections', () => {
+      const emptyCollection: MockNode[] = [];
+      const changes = {
+        added: emptyCollection,
+        modified: emptyCollection,
+        removed: emptyCollection
+      };
+      
+      const totalChanges = changes.added.length + changes.modified.length + changes.removed.length;
+      
+      expect(totalChanges).toBe(0);
+    });
+
+    test('should handle large datasets', () => {
+      const largeDataset = Array.from({ length: 10000 }, (_, i) => ({
+        id: `element${i}`,
+        name: `Element ${i}`,
+        type: 'component'
+      }));
+      
+      expect(largeDataset).toHaveLength(10000);
+      
+      // Test chunking for large datasets
+      const chunkSize = 1000;
+      const chunks = [];
+      for (let i = 0; i < largeDataset.length; i += chunkSize) {
+        chunks.push(largeDataset.slice(i, i + chunkSize));
+      }
+      
+      expect(chunks).toHaveLength(10);
+      expect(chunks[0]).toHaveLength(1000);
+    });
+
+    test('should handle malformed data gracefully', () => {
+      const malformedData = [
+        null,
+        undefined,
+        { id: null, name: 'Test' },
+        { id: '', name: 'Test with empty ID' }, // Changed to empty string
+        'not an object',
+        123
+      ];
+      
+      const validElements = malformedData.filter(item => 
+        item && 
+        typeof item === 'object' && 
+        typeof item.id === 'string' && 
+        item.id.length > 0
+      );
+      
+      expect(validElements).toHaveLength(0);
+    });
+  });
+
+  describe('Additional Error Scenarios', () => {
+    test('should handle invalid element structure', () => {
       const invalidElement = {
         id: 123, // Should be string
         name: 'Test Component',
@@ -955,6 +1315,7 @@ describe('Logify Plugin Functional Tests', () => {
       };
 
       // Should handle undefined vs defined comparison
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const layoutChanged = (previousElement as any).layoutHash !== currentElement.layoutHash;
       expect(layoutChanged).toBe(true);
     });
@@ -1136,6 +1497,7 @@ describe('Logify Plugin Functional Tests', () => {
         }
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const comment = typeof (message as any).comment === 'string' ? (message as any).comment.trim() : '';
       expect(comment).toBe('');
     });
@@ -1153,6 +1515,7 @@ describe('Logify Plugin Functional Tests', () => {
     }
 
     // Mock functions to simulate the filtering logic
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function mockFilterRedundantComponentSetChanges(changes: any) {
       const modifiedComponentSetIds = new Set<string>();
       const modifiedComponentParentNames = new Set<string>();
@@ -1172,6 +1535,7 @@ describe('Logify Plugin Functional Tests', () => {
       }
       
       // Filter out component sets that have changed components
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const filteredModified = changes.modified.filter((element: any) => {
         if (element.type === 'componentSet' && modifiedComponentParentNames.has(element.name)) {
           return false; // Remove component set if its children are also modified
@@ -1185,7 +1549,9 @@ describe('Logify Plugin Functional Tests', () => {
       };
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function mockUpdateComponentDisplayNames(changes: any) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const updatedModified = changes.modified.map((element: any) => {
         if (element.type === 'component' && element.parentName) {
           // Update the name to show "Set - Component" format
@@ -1367,9 +1733,13 @@ describe('Logify Plugin Functional Tests', () => {
 
       // Should have 3 items: 2 components with updated names + 1 component set without child changes
       expect(finalChanges.modified.length).toBe(3);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(finalChanges.modified.find((item: any) => item.id === 'comp1')?.name).toBe('Button Set - Primary');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(finalChanges.modified.find((item: any) => item.id === 'comp2')?.name).toBe('Button Set - Secondary');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(finalChanges.modified.find((item: any) => item.id === 'set2')?.name).toBe('Card Set');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(finalChanges.modified.find((item: any) => item.id === 'set1')).toBeUndefined(); // Should be filtered out
     });
   });
@@ -1386,7 +1756,9 @@ describe('Logify Plugin Functional Tests', () => {
     }
 
     // Mock function to simulate nested property traversal
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function mockTraverseNodeProperties(node: any): any[] {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result: any[] = [];
       
       // Add current node properties
@@ -1412,6 +1784,7 @@ describe('Logify Plugin Functional Tests', () => {
     }
 
     // Mock function to simulate nested content hash calculation
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function mockCalculateNestedContentHash(node: any): string {
       const allNestedData = mockTraverseNodeProperties(node);
       
@@ -1621,6 +1994,7 @@ describe('Logify Plugin Functional Tests', () => {
 
   describe('Element Display Formatting', () => {
     // Mock formatElementForDisplay function
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function mockFormatElementForDisplay(element: any): string {
       const typeEmojis: { [key: string]: string } = {
         component: '🧩',

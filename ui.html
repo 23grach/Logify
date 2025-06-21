@@ -6,21 +6,21 @@
   <title>Design System Tracker</title>
   <style>
     /**
-     * Global CSS reset and box-sizing for consistent rendering
-     * across all browsers and elements
+     * Enhanced global CSS reset and box-sizing for consistent rendering
+     * across all browsers and elements with improved performance
      */
     * {
       box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
     /**
-     * Base body styling with system fonts and layout structure
-     * Uses flexbox for full-height layout management
+     * Improved base body styling with system fonts and optimized layout
+     * Uses flexbox for full-height layout management with enhanced performance
      */
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      margin: 0;
-      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       color: #1a1a1a;
       background: #ffffff;
       font-size: 14px;
@@ -28,21 +28,53 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      overflow: hidden;
     }
 
     /**
-     * Main container for the entire application layout
-     * Manages vertical spacing and full-height distribution
+     * CSS Custom Properties for consistent theming and easy customization
+     */
+    :root {
+      --color-primary: #0066ff;
+      --color-text: #1a1a1a;
+      --color-text-secondary: #666666;
+      --color-text-muted: #888888;
+      --color-background: #ffffff;
+      --color-background-secondary: #f5f5f5;
+      --color-border: #f0f0f0;
+      --color-border-hover: #e0e0e0;
+      --color-success: #00cc44;
+      --color-warning: #ff8800;
+      --color-error: #ff4444;
+      --spacing-xs: 4px;
+      --spacing-sm: 8px;
+      --spacing-md: 12px;
+      --spacing-lg: 16px;
+      --spacing-xl: 20px;
+      --border-radius: 6px;
+      --border-radius-sm: 4px;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+      --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+      --transition: all 0.15s ease;
+    }
+
+    /**
+     * Enhanced main container with improved performance and accessibility
+     * Uses CSS custom properties for consistent spacing
      */
     .container {
       display: flex;
       flex-direction: column;
-      padding: 20px;
-      gap: 20px;
+      padding: var(--spacing-xl);
+      gap: var(--spacing-xl);
       width: 100%;
       height: 100%;
       justify-content: space-between;
       max-width: 100%;
+      contain: layout style;
     }
 
     /**
@@ -190,6 +222,153 @@
       font-weight: 400;
       color: #1a1a1a;
       flex: 1;
+    }
+
+    /**
+     * Enhanced styles for new UI components and features
+     */
+    .filter-container {
+      display: flex;
+      gap: var(--spacing-md);
+      padding: var(--spacing-md);
+      background: var(--color-background-secondary);
+      border-radius: var(--border-radius);
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-xs);
+      flex: 1;
+    }
+
+    .filter-select,
+    .filter-input {
+      padding: var(--spacing-sm);
+      border: 1px solid var(--color-border);
+      border-radius: var(--border-radius-sm);
+      font-size: 13px;
+      transition: var(--transition);
+    }
+
+    .filter-select:focus,
+    .filter-input:focus {
+      outline: none;
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1);
+    }
+
+    .settings-panel {
+      padding: var(--spacing-lg);
+      background: var(--color-background);
+      border-radius: var(--border-radius);
+    }
+
+    .settings-group {
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .settings-label {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .settings-checkbox {
+      width: 16px;
+      height: 16px;
+    }
+
+    .settings-select {
+      padding: var(--spacing-sm);
+      border: 1px solid var(--color-border);
+      border-radius: var(--border-radius-sm);
+      background: var(--color-background);
+      width: 100%;
+    }
+
+    .performance-dashboard {
+      padding: var(--spacing-lg);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .metric-card {
+      padding: var(--spacing-md);
+      background: var(--color-background-secondary);
+      border-radius: var(--border-radius);
+      text-align: center;
+    }
+
+    .metric-value {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--color-primary);
+      line-height: 1.2;
+    }
+
+    .metric-label {
+      font-size: 12px;
+      color: var(--color-text-muted);
+      margin-top: var(--spacing-xs);
+    }
+
+    .toast {
+      font-size: 14px;
+      box-shadow: var(--shadow-md);
+      max-width: 300px;
+      word-wrap: break-word;
+    }
+
+    /* Enhanced button states with better accessibility */
+    .primary-button:focus-visible,
+    .secondary-button:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+
+    /* Improved loading animation */
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+
+    .loading-spinner {
+      animation: pulse 1.5s infinite;
+    }
+
+    /* Better responsive design */
+    @media (max-width: 320px) {
+      .container {
+        padding: var(--spacing-md);
+        gap: var(--spacing-md);
+      }
+      
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .filter-container {
+        flex-direction: column;
+      }
+    }
+
+    /* Dark mode support (if needed in future) */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-text: #ffffff;
+        --color-background: #1a1a1a;
+        --color-background-secondary: #2a2a2a;
+        --color-border: #3a3a3a;
+      }
     }
 
     /**
@@ -1355,6 +1534,224 @@
         renderUI(renderErrorScreen('Message processing failed'));
       }
     };
+
+    // ======================== ADDITIONAL FEATURES ========================
+
+    /**
+     * Export functionality for downloading changelog data
+     */
+    function exportChangelog() {
+      if (!currentChanges) {
+        renderUI(renderErrorScreen('No changes data available for export'));
+        return;
+      }
+      
+      const exportData = {
+        timestamp: Date.now(),
+        changes: currentChanges,
+        metadata: {
+          version: '1.0.0',
+          exported: new Date().toISOString(),
+          plugin: 'Logify'
+        }
+      };
+      
+      const dataStr = JSON.stringify(exportData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `changelog-${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      
+      URL.revokeObjectURL(url);
+    }
+
+    /**
+     * Enhanced filtering functionality with multiple criteria
+     */
+    function setupAdvancedFilters() {
+      const filterContainer = document.createElement('div');
+      filterContainer.className = 'filter-container';
+      filterContainer.innerHTML = `
+        <div class="filter-group">
+          <label for="type-filter">Filter by Type:</label>
+          <select id="type-filter" class="filter-select">
+            <option value="">All Types</option>
+            <option value="component">Components</option>
+            <option value="componentSet">Component Sets</option>
+            <option value="textStyle">Text Styles</option>
+            <option value="colorStyle">Color Styles</option>
+            <option value="variable">Variables</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="search-filter">Search:</label>
+          <input type="text" id="search-filter" class="filter-input" placeholder="Search by name...">
+        </div>
+      `;
+      
+      return filterContainer;
+    }
+
+    /**
+     * Settings panel for plugin configuration
+     */
+    function renderSettingsPanel() {
+      return `
+        <div class="settings-panel">
+          <h2 class="subtitle">Plugin Settings</h2>
+          <div class="settings-group">
+            <label class="settings-label">
+              <input type="checkbox" id="auto-scan" class="settings-checkbox">
+              Auto-scan on file changes
+            </label>
+          </div>
+          <div class="settings-group">
+            <label class="settings-label">
+              <input type="checkbox" id="detailed-changes" class="settings-checkbox">
+              Show detailed property changes
+            </label>
+          </div>
+          <div class="settings-group">
+            <label class="settings-label">Performance Monitoring</label>
+            <select id="perf-level" class="settings-select">
+              <option value="off">Disabled</option>
+              <option value="basic">Basic</option>
+              <option value="detailed">Detailed</option>
+            </select>
+          </div>
+          <div class="actions-container">
+            <button id="save-settings" class="primary-button">Save Settings</button>
+            <button id="cancel-settings" class="secondary-button">Cancel</button>
+          </div>
+        </div>
+      `;
+    }
+
+    /**
+     * Performance dashboard for monitoring plugin efficiency
+     */
+    function renderPerformanceDashboard(metrics) {
+      const stats = metrics || {
+        totalOperations: 0,
+        avgDuration: 0,
+        slowOperations: 0,
+        elementsProcessed: 0
+      };
+      
+      return `
+        <div class="performance-dashboard">
+          <h2 class="subtitle">Performance Dashboard</h2>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-value">${stats.totalOperations}</div>
+              <div class="metric-label">Total Operations</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value">${stats.avgDuration}ms</div>
+              <div class="metric-label">Avg Duration</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value">${stats.slowOperations}</div>
+              <div class="metric-label">Slow Operations</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value">${stats.elementsProcessed}</div>
+              <div class="metric-label">Elements Processed</div>
+            </div>
+          </div>
+          <div class="actions-container">
+            <button id="clear-metrics" class="secondary-button">Clear Metrics</button>
+            <button id="export-metrics" class="secondary-button">Export Data</button>
+          </div>
+        </div>
+      `;
+    }
+
+    /**
+     * Enhanced keyboard navigation support
+     */
+    function setupKeyboardNavigation() {
+      document.addEventListener('keydown', (event) => {
+        // Handle common keyboard shortcuts
+        if (event.ctrlKey || event.metaKey) {
+          switch (event.key) {
+            case 'r':
+              event.preventDefault();
+              debouncedRefresh();
+              break;
+            case 'e':
+              event.preventDefault();
+              exportChangelog();
+              break;
+            case 's':
+              event.preventDefault();
+              // Open settings panel
+              break;
+          }
+        }
+        
+        // Handle escape key
+        if (event.key === 'Escape') {
+          const modal = document.querySelector('.modal');
+          if (modal) {
+            modal.remove();
+          }
+        }
+      });
+    }
+
+    /**
+     * Toast notification system for user feedback
+     */
+    function showToast(message, type = 'info', duration = 3000) {
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 16px;
+        border-radius: var(--border-radius);
+        color: white;
+        font-weight: 500;
+        z-index: 1000;
+        transition: var(--transition);
+        transform: translateX(100%);
+      `;
+      
+      // Set background color based on type
+      const colors = {
+        info: '#0066ff',
+        success: '#00cc44',
+        warning: '#ff8800',
+        error: '#ff4444'
+      };
+      toast.style.backgroundColor = colors[type] || colors.info;
+      
+      document.body.appendChild(toast);
+      
+      // Animate in
+      requestAnimationFrame(() => {
+        toast.style.transform = 'translateX(0)';
+      });
+      
+      // Auto remove
+      setTimeout(() => {
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+          }
+        }, 150);
+      }, duration);
+    }
+
+    // Initialize enhanced features
+    setupKeyboardNavigation();
 
     // Add hidden accessibility helper styles
     const style = document.createElement('style');

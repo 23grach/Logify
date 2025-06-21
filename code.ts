@@ -12,7 +12,11 @@
  * design systems.
  */
 
-// ======================== TYPE DEFINITIONS ========================
+// ========================================================================================
+// TYPE DEFINITIONS
+// ========================================================================================
+// This section contains all TypeScript interfaces, types, and type guards used throughout
+// the plugin for design system element tracking and plugin communication.
 
 /**
  * Represents a design system element that can be tracked for changes.
@@ -138,37 +142,348 @@ interface Changes {
 }
 
 /**
- * Message structure for plugin communication.
+ * Strongly typed plugin messages for better type safety and IDE support.
+ * Each message type has its own interface with specific properties.
  */
-interface PluginMessage {
-  /** Message type identifier */
-  type: string;
+type PluginMessage = 
+  | { type: 'initialize' }
+  | { type: 'refresh' }
+  | { type: 'addToFigma'; changes: Changes; comment?: string }
+  | { type: 'skipVersion' }
+  | { type: 'viewRecords' }
+  | { type: 'getPerformanceMetrics' }
+  | { type: 'clearPerformanceMetrics' }
+  | { type: 'exportLogs' }
+  | { type: 'clearLogs' }
+  | { type: 'setLogLevel'; level: number };
+
+/**
+ * Type guard to validate if a message is a valid PluginMessage.
+ * Provides runtime type checking for incoming messages.
+ * 
+ * @param msg - The message to validate
+ * @returns True if the message is a valid PluginMessage
+ */
+function isValidPluginMessage(msg: unknown): msg is PluginMessage {
+  if (!msg || typeof msg !== 'object') {
+    return false;
+  }
   
-  /** Additional message data */
-  [key: string]: unknown;
+  const message = msg as Record<string, unknown>;
+  if (typeof message.type !== 'string') {
+    return false;
+  }
+  
+  const validTypes = [
+    'initialize', 'refresh', 'addToFigma', 'skipVersion', 'viewRecords',
+    'getPerformanceMetrics', 'clearPerformanceMetrics', 'exportLogs', 'clearLogs', 'setLogLevel'
+  ];
+  return validTypes.includes(message.type);
 }
 
-// ======================== CONSTANTS ========================
+// ========================================================================================
+// CONFIGURATION & CONSTANTS
+// ========================================================================================
+// This section contains all configuration constants, storage keys, UI dimensions,
+// and other constant values used throughout the plugin.
 
-/** Plugin namespace for data storage */
-const PLUGIN_NAMESPACE = 'changelog_tracker';
+/**
+ * Plugin configuration constants centralized for easy maintenance and modification.
+ * All configuration values are organized by functional area for better discoverability.
+ */
+const CONFIG = {
+  // Storage configuration
+  STORAGE: {
+    NAMESPACE: 'changelog_tracker',
+    TRACKING_DATA_KEY: 'trackingData',
+    CHUNK_SIZE_LIMIT: 90000, // Figma's plugin data limit per key
+  },
+  
+  // UI configuration  
+  UI: {
+    WINDOW_SIZE: { width: 400, height: 600 },
+    PAGE_NAME: '🖹 Logify',
+    CONTAINER_NAME: 'Changelog Container',
+    ENTRY_PREFIX: 'Logify Entry',
+  },
+  
+  // Limits and validation
+  LIMITS: {
+    COMMENT_MAX_LENGTH: 500,
+    TEXT_WRAP_LENGTH: 60,
+    MAX_ELEMENTS_PER_SCAN: 10000,
+  },
+  
+  // Performance configuration
+  PERFORMANCE: {
+    SLOW_OPERATION_THRESHOLD: 1000, // milliseconds
+    BATCH_SIZE: 50, // elements per batch
+    MAX_CONCURRENT_OPERATIONS: 5,
+  },
+  
+  // Visual styling constants
+  COLORS: {
+    BACKGROUND: { r: 0.95, g: 0.97, b: 1 },
+    TEXT: { r: 0.2, g: 0.2, b: 0.2 },
+    ACCENT: { r: 0, g: 0.48, b: 1 },
+    COMMENT_BG: { r: 0.97, g: 0.99, b: 1 },
+  },
+  
+  // Typography
+  TYPOGRAPHY: {
+    FONT_FAMILY: 'Inter',
+    TITLE_SIZE: 18,
+    BODY_SIZE: 14,
+    SMALL_SIZE: 12,
+  }
+} as const;
 
-/** Storage key for tracking data */
-const TRACKING_DATA_KEY = 'trackingData';
+// Legacy constants for backward compatibility (to be removed in future updates)
+/** @deprecated Use CONFIG.STORAGE.NAMESPACE instead */
+const PLUGIN_NAMESPACE = CONFIG.STORAGE.NAMESPACE;
+/** @deprecated Use CONFIG.STORAGE.TRACKING_DATA_KEY instead */
+const TRACKING_DATA_KEY = CONFIG.STORAGE.TRACKING_DATA_KEY;
+/** @deprecated Use CONFIG.STORAGE.CHUNK_SIZE_LIMIT instead */
+const CHUNK_SIZE_LIMIT = CONFIG.STORAGE.CHUNK_SIZE_LIMIT;
+/** @deprecated Use CONFIG.UI.PAGE_NAME instead */
+const LOGIFY_PAGE_NAME = CONFIG.UI.PAGE_NAME;
+/** @deprecated Use CONFIG.UI.CONTAINER_NAME instead */
+const CHANGELOG_CONTAINER_NAME = CONFIG.UI.CONTAINER_NAME;
+/** @deprecated Use CONFIG.UI.ENTRY_PREFIX instead */
+const ENTRY_NAME_PREFIX = CONFIG.UI.ENTRY_PREFIX;
 
-/** Maximum chunk size for data storage (Figma limit) */
-const CHUNK_SIZE_LIMIT = 90000;
+// ========================================================================================
+// ERROR HANDLING
+// ========================================================================================
+// This section provides centralized error handling utilities for consistent error
+// processing, logging, and user feedback throughout the plugin.
 
-/** Name of the dedicated changelog page */
-const LOGIFY_PAGE_NAME = "🖹 Logify";
+/**
+ * Centralized error handling for consistent error processing throughout the plugin.
+ * Provides unified logging, user notifications, and UI communication for all errors.
+ * 
+ * @param error - The error that occurred
+ * @param context - Descriptive context of where the error occurred
+ * @param showNotification - Whether to show user notification (default: true)
+ * @param notifyUI - Whether to notify the UI about the error (default: true)
+ */
+function handleError(error: unknown, context: string, showNotification = true, notifyUI = true): void {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const fullMessage = `[${context}] ${errorMessage}`;
+  
+  // Always log the full error details
+  console.error(fullMessage, error);
+  
+  // Show user notification if requested
+  if (showNotification) {
+    figma.notify(`Error in ${context}`, { error: true });
+  }
+  
+  // Notify UI about the error if requested
+  if (notifyUI) {
+    figma.ui.postMessage({
+      type: 'error',
+      message: errorMessage,
+      context: context
+    });
+  }
+}
 
-/** Name of the main changelog container */
-const CHANGELOG_CONTAINER_NAME = "Changelog Container";
+/**
+ * Wrapper for async functions to provide consistent error handling.
+ * Automatically catches errors and processes them through the centralized handler.
+ * 
+ * @param fn - The async function to execute
+ * @param context - Context description for error reporting
+ * @param showNotification - Whether to show user notifications on error
+ * @returns Promise that resolves with function result or undefined on error
+ */
+async function withErrorHandling<T>(
+  fn: () => Promise<T>, 
+  context: string, 
+  showNotification = true
+): Promise<T | undefined> {
+  try {
+    return await fn();
+  } catch (error) {
+    handleError(error, context, showNotification);
+    return undefined;
+  }
+}
 
-/** Prefix for individual changelog entries */
-const ENTRY_NAME_PREFIX = "Logify Entry";
+// ========================================================================================
+// PERFORMANCE MONITORING
+// ========================================================================================
+// This section contains performance monitoring functions that track execution times,
+// memory usage, and operation efficiency for optimization purposes.
 
-// ======================== UTILITY FUNCTIONS ========================
+/**
+ * Performance metrics for tracking operation efficiency.
+ */
+interface PerformanceMetrics {
+  /** Operation identifier */
+  operation: string;
+  
+  /** Start timestamp */
+  startTime: number;
+  
+  /** End timestamp */
+  endTime?: number;
+  
+  /** Duration in milliseconds */
+  duration?: number;
+  
+  /** Memory usage before operation */
+  memoryBefore?: number;
+  
+  /** Memory usage after operation */
+  memoryAfter?: number;
+  
+  /** Number of elements processed */
+  elementsProcessed?: number;
+  
+  /** Additional context data */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Performance monitoring utility class for tracking operation efficiency.
+ */
+class PerformanceMonitor {
+  private static metrics: PerformanceMetrics[] = [];
+  private static readonly MAX_METRICS = 100;
+  
+  /**
+   * Starts performance monitoring for an operation.
+   * 
+   * @param operation - Name of the operation to monitor
+   * @param metadata - Additional context data
+   * @returns Performance metrics object
+   */
+  static startOperation(operation: string, metadata?: Record<string, unknown>): PerformanceMetrics {
+    const metric: PerformanceMetrics = {
+      operation,
+      startTime: Date.now(),
+      memoryBefore: this.getMemoryUsage(),
+      metadata
+    };
+    
+    this.metrics.push(metric);
+    
+    // Keep only the last MAX_METRICS entries
+    if (this.metrics.length > this.MAX_METRICS) {
+      this.metrics = this.metrics.slice(-this.MAX_METRICS);
+    }
+    
+    return metric;
+  }
+  
+  /**
+   * Ends performance monitoring for an operation.
+   * 
+   * @param metric - Performance metrics object from startOperation
+   * @param elementsProcessed - Number of elements processed
+   */
+  static endOperation(metric: PerformanceMetrics, elementsProcessed?: number): void {
+    const endTime = Date.now();
+    metric.endTime = endTime;
+    metric.duration = endTime - metric.startTime;
+    metric.memoryAfter = this.getMemoryUsage();
+    metric.elementsProcessed = elementsProcessed;
+    
+    // Log performance if operation takes longer than threshold
+    if (metric.duration > CONFIG.PERFORMANCE.SLOW_OPERATION_THRESHOLD) {
+      console.warn(`Slow operation detected: ${metric.operation} took ${metric.duration}ms`);
+    }
+  }
+  
+  /**
+   * Executes a function with performance monitoring.
+   * 
+   * @param operation - Name of the operation
+   * @param fn - Function to execute
+   * @param elementsCount - Number of elements being processed
+   * @returns Result of the function execution
+   */
+  static async monitor<T>(
+    operation: string, 
+    fn: () => Promise<T>, 
+    elementsCount?: number
+  ): Promise<T> {
+    const metric = this.startOperation(operation, { elementsCount });
+    try {
+      const result = await fn();
+      this.endOperation(metric, elementsCount);
+      return result;
+    } catch (error) {
+      this.endOperation(metric, elementsCount);
+      throw error;
+    }
+  }
+  
+  /**
+   * Gets memory usage estimation (simplified for Figma plugin environment).
+   * 
+   * @returns Estimated memory usage
+   */
+  private static getMemoryUsage(): number {
+    // Simplified memory estimation since we don't have full access to performance.memory
+    return Date.now() % 1000000; // Placeholder value
+  }
+  
+  /**
+   * Gets performance summary for recent operations.
+   * 
+   * @returns Array of performance metrics
+   */
+  static getMetrics(): PerformanceMetrics[] {
+    return [...this.metrics];
+  }
+  
+  /**
+   * Gets performance statistics for a specific operation.
+   * 
+   * @param operation - Operation name to analyze
+   * @returns Performance statistics
+   */
+  static getOperationStats(operation: string): {
+    count: number;
+    avgDuration: number;
+    minDuration: number;
+    maxDuration: number;
+    totalElements: number;
+  } {
+    const operationMetrics = this.metrics.filter(m => m.operation === operation && m.duration);
+    
+    if (operationMetrics.length === 0) {
+      return { count: 0, avgDuration: 0, minDuration: 0, maxDuration: 0, totalElements: 0 };
+    }
+    
+    const durations = operationMetrics.map(m => m.duration!);
+    const elements = operationMetrics.map(m => m.elementsProcessed || 0);
+    
+    return {
+      count: operationMetrics.length,
+      avgDuration: durations.reduce((a, b) => a + b, 0) / durations.length,
+      minDuration: Math.min(...durations),
+      maxDuration: Math.max(...durations),
+      totalElements: elements.reduce((a, b) => a + b, 0)
+    };
+  }
+  
+  /**
+   * Clears performance metrics.
+   */
+  static clearMetrics(): void {
+    this.metrics = [];
+  }
+}
+
+// ========================================================================================
+// UTILITY FUNCTIONS
+// ========================================================================================
+// This section contains core utility functions for hashing, validation, and data
+// processing that are used throughout the plugin.
 
 /**
  * Generates a hash string using the djb2 algorithm.
@@ -198,7 +513,11 @@ function hashObject(obj: unknown): string {
   return simpleHash(JSON.stringify(obj));
 }
 
-// ======================== VALIDATION FUNCTIONS ========================
+// ========================================================================================
+// VALIDATION & TYPE GUARDS  
+// ========================================================================================
+// This section provides validation functions and type guards for ensuring data integrity
+// and type safety throughout the plugin.
 
 /**
  * Type guard that validates if an unknown object is a DesignSystemElement.
@@ -259,7 +578,373 @@ function validateChanges(changes: unknown): changes is Changes {
          ((changes as Record<string, unknown>).removed as unknown[]).every(validateDesignSystemElement);
 }
 
-// ======================== DATA COMPRESSION ========================
+/**
+ * Enhanced validation result with detailed error information.
+ */
+interface ValidationResult {
+  /** Whether validation passed */
+  isValid: boolean;
+  
+  /** Array of validation errors */
+  errors: string[];
+  
+  /** Array of validation warnings */
+  warnings: string[];
+}
+
+/**
+ * Enhanced validation for DesignSystemElement with detailed error reporting.
+ * 
+ * @param element - The element to validate
+ * @param context - Context for error reporting
+ * @returns Detailed validation result
+ */
+function validateDesignSystemElementDetailed(element: unknown, context = 'element'): ValidationResult {
+  const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
+  
+  if (!element) {
+    result.errors.push(`${context} is null or undefined`);
+    result.isValid = false;
+    return result;
+  }
+  
+  if (typeof element !== 'object') {
+    result.errors.push(`${context} must be an object, got ${typeof element}`);
+    result.isValid = false;
+    return result;
+  }
+  
+  const obj = element as Record<string, unknown>;
+  
+  // Required fields validation
+  if (!('id' in obj)) {
+    result.errors.push(`${context} missing required field: id`);
+    result.isValid = false;
+  } else if (typeof obj.id !== 'string') {
+    result.errors.push(`${context}.id must be a string, got ${typeof obj.id}`);
+    result.isValid = false;
+  } else if (obj.id.length === 0) {
+    result.errors.push(`${context}.id cannot be empty`);
+    result.isValid = false;
+  }
+  
+  if (!('name' in obj)) {
+    result.errors.push(`${context} missing required field: name`);
+    result.isValid = false;
+  } else if (typeof obj.name !== 'string') {
+    result.errors.push(`${context}.name must be a string, got ${typeof obj.name}`);
+    result.isValid = false;
+  } else if (obj.name.length === 0) {
+    result.warnings.push(`${context}.name is empty`);
+  }
+  
+  if (!('type' in obj)) {
+    result.errors.push(`${context} missing required field: type`);
+    result.isValid = false;
+  } else if (typeof obj.type !== 'string') {
+    result.errors.push(`${context}.type must be a string, got ${typeof obj.type}`);
+    result.isValid = false;
+  } else {
+    const validTypes = ['component', 'componentSet', 'textStyle', 'colorStyle', 'variable', 'variableCollection'];
+    if (!validTypes.includes(obj.type)) {
+      result.errors.push(`${context}.type must be one of: ${validTypes.join(', ')}, got "${obj.type}"`);
+      result.isValid = false;
+    }
+  }
+  
+  // Optional fields validation
+  if ('key' in obj && obj.key !== undefined && typeof obj.key !== 'string') {
+    result.errors.push(`${context}.key must be a string or undefined, got ${typeof obj.key}`);
+    result.isValid = false;
+  }
+  
+  if ('description' in obj && obj.description !== undefined && typeof obj.description !== 'string') {
+    result.errors.push(`${context}.description must be a string or undefined, got ${typeof obj.description}`);
+    result.isValid = false;
+  }
+  
+  // Timestamp validation
+  if ('modifiedAt' in obj && obj.modifiedAt !== undefined) {
+    if (typeof obj.modifiedAt !== 'number') {
+      result.errors.push(`${context}.modifiedAt must be a number, got ${typeof obj.modifiedAt}`);
+      result.isValid = false;
+    } else if (obj.modifiedAt < 0 || obj.modifiedAt > Date.now() + 86400000) { // Allow 1 day in future
+      result.warnings.push(`${context}.modifiedAt timestamp seems invalid: ${obj.modifiedAt}`);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Enhanced validation for TrackingData with detailed error reporting.
+ * 
+ * @param data - The data to validate
+ * @returns Detailed validation result
+ */
+function validateTrackingDataDetailed(data: unknown): ValidationResult {
+  const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
+  
+  if (!data || typeof data !== 'object') {
+    result.errors.push('TrackingData must be a non-null object');
+    result.isValid = false;
+    return result;
+  }
+  
+  const obj = data as Record<string, unknown>;
+  
+  // Validate timestamp
+  if (!('timestamp' in obj)) {
+    result.errors.push('TrackingData missing required field: timestamp');
+    result.isValid = false;
+  } else if (typeof obj.timestamp !== 'number') {
+    result.errors.push(`TrackingData.timestamp must be a number, got ${typeof obj.timestamp}`);
+    result.isValid = false;
+  } else if (obj.timestamp < 0 || obj.timestamp > Date.now() + 86400000) {
+    result.warnings.push(`TrackingData.timestamp seems invalid: ${obj.timestamp}`);
+  }
+  
+  // Validate elements array
+  if (!('elements' in obj)) {
+    result.errors.push('TrackingData missing required field: elements');
+    result.isValid = false;
+  } else if (!Array.isArray(obj.elements)) {
+    result.errors.push(`TrackingData.elements must be an array, got ${typeof obj.elements}`);
+    result.isValid = false;
+  } else {
+    // Validate each element
+    obj.elements.forEach((element, index) => {
+      const elementResult = validateDesignSystemElementDetailed(element, `elements[${index}]`);
+      result.errors.push(...elementResult.errors);
+      result.warnings.push(...elementResult.warnings);
+      if (!elementResult.isValid) {
+        result.isValid = false;
+      }
+    });
+    
+    if (obj.elements.length > CONFIG.LIMITS.MAX_ELEMENTS_PER_SCAN) {
+      result.warnings.push(`TrackingData contains ${obj.elements.length} elements, which exceeds recommended limit of ${CONFIG.LIMITS.MAX_ELEMENTS_PER_SCAN}`);
+    }
+  }
+  
+  return result;
+}
+
+// ========================================================================================
+// LOGGING & MONITORING
+// ========================================================================================
+// This section provides comprehensive logging and monitoring capabilities for debugging,
+// performance tracking, and operational insights.
+
+/**
+ * Log levels for categorizing messages.
+ */
+enum LogLevel {
+  DEBUG = 0,
+  INFO = 1,
+  WARN = 2,
+  ERROR = 3
+}
+
+/**
+ * Structured log entry interface.
+ */
+interface LogEntry {
+  /** Timestamp of the log entry */
+  timestamp: number;
+  
+  /** Log level */
+  level: LogLevel;
+  
+  /** Log message */
+  message: string;
+  
+  /** Context or category */
+  context: string;
+  
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
+  
+  /** Performance metrics if applicable */
+  performance?: {
+    duration?: number;
+    elementsProcessed?: number;
+  };
+}
+
+/**
+ * Advanced logging system with structured logging, filtering, and monitoring.
+ */
+class Logger {
+  private static logs: LogEntry[] = [];
+  private static readonly MAX_LOGS = 500;
+  private static currentLogLevel = LogLevel.INFO;
+  
+  /**
+   * Sets the minimum log level for output.
+   * 
+   * @param level - Minimum log level to output
+   */
+  static setLogLevel(level: LogLevel): void {
+    this.currentLogLevel = level;
+  }
+  
+  /**
+   * Logs a debug message.
+   * 
+   * @param message - Debug message
+   * @param context - Context or category
+   * @param metadata - Additional metadata
+   */
+  static debug(message: string, context = 'general', metadata?: Record<string, unknown>): void {
+    this.log(LogLevel.DEBUG, message, context, metadata);
+  }
+  
+  /**
+   * Logs an info message.
+   * 
+   * @param message - Info message
+   * @param context - Context or category
+   * @param metadata - Additional metadata
+   */
+  static info(message: string, context = 'general', metadata?: Record<string, unknown>): void {
+    this.log(LogLevel.INFO, message, context, metadata);
+  }
+  
+  /**
+   * Logs a warning message.
+   * 
+   * @param message - Warning message
+   * @param context - Context or category
+   * @param metadata - Additional metadata
+   */
+  static warn(message: string, context = 'general', metadata?: Record<string, unknown>): void {
+    this.log(LogLevel.WARN, message, context, metadata);
+  }
+  
+  /**
+   * Logs an error message.
+   * 
+   * @param message - Error message
+   * @param context - Context or category
+   * @param metadata - Additional metadata
+   */
+  static error(message: string, context = 'general', metadata?: Record<string, unknown>): void {
+    this.log(LogLevel.ERROR, message, context, metadata);
+  }
+  
+  /**
+   * Logs a performance metric.
+   * 
+   * @param operation - Operation name
+   * @param duration - Duration in milliseconds
+   * @param elementsProcessed - Number of elements processed
+   * @param context - Context or category
+   */
+  static performance(operation: string, duration: number, elementsProcessed?: number, context = 'performance'): void {
+    this.log(LogLevel.INFO, `Operation '${operation}' completed`, context, {
+      operation,
+      performance: { duration, elementsProcessed }
+    });
+  }
+  
+  /**
+   * Internal logging method.
+   * 
+   * @param level - Log level
+   * @param message - Log message
+   * @param context - Context or category
+   * @param metadata - Additional metadata
+   */
+  private static log(level: LogLevel, message: string, context: string, metadata?: Record<string, unknown>): void {
+    if (level < this.currentLogLevel) {
+      return;
+    }
+    
+    const entry: LogEntry = {
+      timestamp: Date.now(),
+      level,
+      message,
+      context,
+      metadata
+    };
+    
+    this.logs.push(entry);
+    
+    // Keep only the last MAX_LOGS entries
+    if (this.logs.length > this.MAX_LOGS) {
+      this.logs = this.logs.slice(-this.MAX_LOGS);
+    }
+    
+    // Output to console based on level
+    const logMessage = `[${LogLevel[level]}] ${context}: ${message}`;
+    switch (level) {
+      case LogLevel.DEBUG:
+        console.debug(logMessage, metadata);
+        break;
+      case LogLevel.INFO:
+        console.info(logMessage, metadata);
+        break;
+      case LogLevel.WARN:
+        console.warn(logMessage, metadata);
+        break;
+      case LogLevel.ERROR:
+        console.error(logMessage, metadata);
+        break;
+    }
+  }
+  
+  /**
+   * Gets all log entries.
+   * 
+   * @returns Array of log entries
+   */
+  static getLogs(): LogEntry[] {
+    return [...this.logs];
+  }
+  
+  /**
+   * Gets log entries filtered by level.
+   * 
+   * @param level - Minimum log level to include
+   * @returns Filtered log entries
+   */
+  static getLogsByLevel(level: LogLevel): LogEntry[] {
+    return this.logs.filter(log => log.level >= level);
+  }
+  
+  /**
+   * Gets log entries filtered by context.
+   * 
+   * @param context - Context to filter by
+   * @returns Filtered log entries
+   */
+  static getLogsByContext(context: string): LogEntry[] {
+    return this.logs.filter(log => log.context === context);
+  }
+  
+  /**
+   * Clears all log entries.
+   */
+  static clearLogs(): void {
+    this.logs = [];
+  }
+  
+  /**
+   * Exports logs as JSON string.
+   * 
+   * @returns JSON string of all logs
+   */
+  static exportLogs(): string {
+    return JSON.stringify(this.logs, null, 2);
+  }
+}
+
+// ========================================================================================
+// DATA COMPRESSION & OPTIMIZATION
+// ========================================================================================
+// This section handles data compression and optimization for efficient storage within
+// Figma's plugin data limits.
 
 /**
  * Compresses tracking data for efficient storage by using shorter property names.
@@ -325,7 +1010,11 @@ function decompressDataFromStorage(compressedData: Record<string, unknown>): Tra
   };
 }
 
-// ======================== STORAGE FUNCTIONS ========================
+// ========================================================================================
+// DATA STORAGE & PERSISTENCE
+// ========================================================================================
+// This section handles all data storage operations, including compression, chunking,
+// and retrieval of tracking data from Figma's shared plugin data storage.
 
 /**
  * Retrieves stored tracking data from Figma's shared plugin data storage.
@@ -436,7 +1125,11 @@ function clearStoredTrackingData(): void {
   }
 }
 
-// ======================== SERIALIZATION FUNCTIONS ========================
+// ========================================================================================
+// SERIALIZATION & PROPERTY HASHING
+// ========================================================================================
+// This section contains functions for serializing Figma node properties into hashable
+// strings for efficient change detection and comparison.
 
 /**
  * Serializes paint properties (fills) into a hash for change detection.
@@ -641,7 +1334,11 @@ function serializeVariableProperties(variable: Variable): string {
   return hashObject(variableData);
 }
 
-// ======================== DETAILED COMPARISON FUNCTIONS ========================
+// ========================================================================================
+// DETAILED PROPERTY COMPARISON
+// ========================================================================================
+// This section provides detailed comparison and analysis functions for tracking specific
+// property changes between design system elements.
 
 /**
  * Converts RGB color values (0-1 range) to hexadecimal color format.
@@ -1046,7 +1743,11 @@ function serializeBaseStyleProperties(style: BaseStyle): Partial<DesignSystemEle
   return properties;
 }
 
-// ======================== COLLECTION FUNCTIONS ========================
+// ========================================================================================
+// DESIGN SYSTEM ELEMENT COLLECTION
+// ========================================================================================
+// This section contains functions for collecting and cataloging design system elements
+// from Figma documents, including components, styles, and variables.
 
 /**
  * Collects all component nodes from the current Figma document.
@@ -1214,25 +1915,39 @@ async function collectVariables(): Promise<DesignSystemElement[]> {
  * @returns Promise resolving to comprehensive array of all design system elements
  */
 async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
-  const elements: DesignSystemElement[] = [];
-  
-  // Load all pages first (required by Figma API for findAllWithCriteria)
-  await figma.loadAllPagesAsync();
-  
-  // Collect all element types
-  const [components, componentSets, styles, variables] = await Promise.all([
-    collectComponents(),
-    collectComponentSets(),
-    collectStyles(),
-    collectVariables()
-  ]);
-  
-  elements.push(...components, ...componentSets, ...styles, ...variables);
-  
-  return elements;
+  return await PerformanceMonitor.monitor('collectDesignSystemElements', async () => {
+    Logger.info('Starting design system element collection', 'collection');
+    
+    // Load all pages first (required by Figma API for findAllWithCriteria)
+    await figma.loadAllPagesAsync();
+    
+    // Collect all element types
+    const [components, componentSets, styles, variables] = await Promise.all([
+      collectComponents(),
+      collectComponentSets(),
+      collectStyles(),
+      collectVariables()
+    ]);
+    
+    const elements: DesignSystemElement[] = [];
+    elements.push(...components, ...componentSets, ...styles, ...variables);
+    
+    Logger.info(`Collected ${elements.length} design system elements`, 'collection', {
+      components: components.length,
+      componentSets: componentSets.length,
+      styles: styles.length,
+      variables: variables.length
+    });
+    
+    return elements;
+  });
 }
 
-// ======================== COMPARISON FUNCTIONS ========================
+// ========================================================================================
+// CHANGE DETECTION & COMPARISON
+// ========================================================================================
+// This section provides high-level change detection and comparison logic for identifying
+// modifications between design system states.
 
 /**
  * Filters out redundant component set changes when their child components are also modified.
@@ -1393,14 +2108,18 @@ function hasElementChanged(previous: DesignSystemElement, current: DesignSystemE
          previous.description !== current.description;
 }
 
-// ======================== MAIN PLUGIN FUNCTIONS ========================
+// ========================================================================================
+// CORE PLUGIN OPERATIONS
+// ========================================================================================
+// This section contains the main plugin functions for initialization, tracking updates,
+// and orchestrating the overall plugin workflow.
 
 /**
  * Initializes the Figma plugin by setting up the UI and starting the tracking system.
  * Automatically begins tracking initialization and handles any initialization errors.
  */
 function initializePlugin(): void {
-  figma.showUI(__html__, { width: 400, height: 600 });
+  figma.showUI(__html__, CONFIG.UI.WINDOW_SIZE);
   
   // Automatically start tracking initialization
   initializeTracking().catch(error => {
@@ -1416,46 +2135,70 @@ function initializePlugin(): void {
  * Initializes the design system tracking by collecting current elements and comparing
  * with previously stored data. Sets up initial tracking state or detects existing changes.
  * 
- * @throws Error if tracking initialization fails
+ * Uses centralized error handling for consistent error processing.
  */
 async function initializeTracking(): Promise<void> {
-  try {
-    const currentElements = await collectDesignSystemElements(); 
-    const storedData = getStoredTrackingData();
-    
-    if (!storedData) {
-      // First-time initialization - store current state
-      const initialData: TrackingData = {
-        timestamp: Date.now(),
-        elements: currentElements
-      };
-      setStoredTrackingData(initialData);
+  const result = await withErrorHandling(async () => {
+          const currentElements = await collectDesignSystemElements();
+      return await PerformanceMonitor.monitor('initializeTracking', async () => {
+        Logger.info('Starting tracking initialization', 'tracking'); 
+      const storedData = getStoredTrackingData();
       
-      figma.ui.postMessage({
-        type: 'initialized',
-        count: currentElements.length
-      });
-    } else {
-      // Compare current state with stored data
-      const changes = compareElements(storedData.elements, currentElements);
-      const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0;
-      
-      if (hasChanges) {
-        figma.ui.postMessage({
-          type: 'changes',
-          changes: changes,
+      if (!storedData) {
+        // First-time initialization - store current state
+        const initialData: TrackingData = {
           timestamp: Date.now(),
-          hasChanges: true
-        });
-      } else {
+          elements: currentElements
+        };
+        
+        // Validate data before storing
+        const validationResult = validateTrackingDataDetailed(initialData);
+        if (!validationResult.isValid) {
+          throw new Error(`Validation failed: ${validationResult.errors.join(', ')}`);
+        }
+        
+        if (validationResult.warnings.length > 0) {
+          Logger.warn(`Initialization warnings: ${validationResult.warnings.join(', ')}`, 'tracking');
+        }
+        
+        setStoredTrackingData(initialData);
+        
         figma.ui.postMessage({
-          type: 'scanComplete'
+          type: 'initialized',
+          count: currentElements.length,
+          warnings: validationResult.warnings
         });
+        
+        Logger.info(`Tracking initialized with ${currentElements.length} elements`, 'tracking');
+      } else {
+        // Compare current state with stored data
+        const changes = compareElements(storedData.elements, currentElements);
+        const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0;
+        
+        if (hasChanges) {
+          Logger.info(`Found ${changes.added.length + changes.modified.length + changes.removed.length} changes`, 'tracking');
+          figma.ui.postMessage({
+            type: 'changes',
+            changes: changes,
+            timestamp: Date.now(),
+            hasChanges: true
+          });
+        } else {
+          Logger.info('No changes detected', 'tracking');
+          figma.ui.postMessage({
+            type: 'scanComplete'
+          });
+        }
       }
-    }
-  } catch (error) {
-    console.error('Error initializing tracking:', error);
-    throw error;
+      
+      return currentElements;
+    }, currentElements.length);
+  }, 'Tracking Initialization');
+  
+  // If initialization failed, the error was already handled by withErrorHandling
+  if (result === undefined) {
+    Logger.error('Tracking initialization failed', 'tracking');
+    return;
   }
 }
 
@@ -1464,10 +2207,10 @@ async function initializeTracking(): Promise<void> {
  * Creates a new snapshot of all tracked elements and stores it persistently.
  * 
  * @param notifyUI - Whether to send notification message to UI after update
- * @throws Error if tracking data update fails
+ * Uses centralized error handling for consistent error processing.
  */
 async function updateTrackingData(notifyUI: boolean = true): Promise<void> {
-  try {
+  await withErrorHandling(async () => {
     const currentElements = await collectDesignSystemElements();
     const trackingData: TrackingData = {
       timestamp: Date.now(),
@@ -1483,20 +2226,17 @@ async function updateTrackingData(notifyUI: boolean = true): Promise<void> {
         timestamp: trackingData.timestamp
       });
     }
-  } catch (error) {
-    console.error('Error updating tracking data:', error);
-    throw error;
-  }
+  }, 'Tracking Data Update');
 }
 
 /**
  * Scans the current design system state and compares it with stored tracking data
  * to detect any changes. Initiates tracking if no stored data exists.
  * 
- * @throws Error if scanning or comparison fails
+ * Uses centralized error handling for consistent error processing.
  */
 async function scanAndCompare(): Promise<void> {
-  try {
+  await withErrorHandling(async () => {
     const currentElements = await collectDesignSystemElements();
     const storedData = getStoredTrackingData();
     
@@ -1520,10 +2260,7 @@ async function scanAndCompare(): Promise<void> {
         type: 'scanComplete'
       });
     }
-  } catch (error) {
-    console.error('Error scanning for changes:', error);
-    throw error;
-  }
+  }, 'Change Scanning');
 }
 
 /**
@@ -1567,6 +2304,12 @@ function formatElementForDisplay(element: DesignSystemElement | DetailedModified
   return displayText;
 }
 
+// ========================================================================================
+// FIGMA INTEGRATION & VISUALIZATION
+// ========================================================================================
+// This section contains functions for creating visual changelog entries and integrating
+// change information directly into Figma documents.
+
 /**
  * Creates a visual changelog entry in Figma by adding changes to a dedicated Logify page.
  * Generates formatted frames with sections for added, modified, and removed elements,
@@ -1576,7 +2319,7 @@ function formatElementForDisplay(element: DesignSystemElement | DetailedModified
  * @throws Error if fonts cannot be loaded or Figma operations fail
  */
 async function addToFigma(changes: Changes): Promise<void> {
-  try {
+  await withErrorHandling(async () => {
     // Load required fonts
     await figma.loadFontAsync({ family: "Inter", style: "Regular" });
     await figma.loadFontAsync({ family: "Inter", style: "Medium" });
@@ -1707,7 +2450,7 @@ async function addToFigma(changes: Changes): Promise<void> {
     // Add comment if provided
     if (changes.comment) {
       const commentText = figma.createText();
-      const wrappedComment = wrapText(changes.comment, 60);
+      const wrappedComment = wrapText(changes.comment, CONFIG.LIMITS.TEXT_WRAP_LENGTH);
       commentText.characters = `💬 ${wrappedComment}`;
       commentText.fontSize = 14;
       commentText.lineHeight = { unit: "PERCENT", value: 160 };
@@ -1748,13 +2491,7 @@ async function addToFigma(changes: Changes): Promise<void> {
     figma.ui.postMessage({ type: 'addedToFigma' });
     figma.notify('Logify entry added to 🖹Logify page');
     
-  } catch (error) {
-    console.error('Error adding to Figma:', error);
-    figma.ui.postMessage({ 
-      type: 'error',
-      message: 'Failed to add to Figma: ' + (error instanceof Error ? error.message : String(error))
-    });
-  }
+  }, 'Add to Figma');
 }
 
 /**
@@ -1782,7 +2519,11 @@ function wrapText(text: string, maxLength: number): string {
   return result;
 }
 
-// ======================== MESSAGE HANDLER ========================
+// ========================================================================================
+// MESSAGE HANDLING & UI COMMUNICATION
+// ========================================================================================
+// This section handles all communication between the plugin and UI, processing messages
+// and coordinating actions based on user interactions.
 
 /**
  * Handles messages from the plugin UI and dispatches them to appropriate handlers.
@@ -1795,8 +2536,16 @@ function wrapText(text: string, maxLength: number): string {
  * - skipVersion: Skip current version tracking
  * - viewRecords: Retrieve stored tracking data
  */
-figma.ui.onmessage = async (msg: PluginMessage) => {
-  try {
+figma.ui.onmessage = async (msg: unknown) => {
+  await withErrorHandling(async () => {
+    if (!isValidPluginMessage(msg)) {
+      figma.ui.postMessage({
+        type: 'error',
+        message: 'Invalid message format'
+      });
+      return;
+    }
+    
     switch (msg.type) {
       case 'initialize':
         await initializeTracking();
@@ -1807,20 +2556,21 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
         break;
         
       case 'addToFigma': {
-        if (msg.changes && validateChanges(msg.changes)) {
+        const addMessage = msg as { type: 'addToFigma'; changes?: unknown; comment?: unknown };
+        if (addMessage.changes && validateChanges(addMessage.changes)) {
           // Validate comment if provided
-          const comment = typeof msg.comment === 'string' ? msg.comment.trim() : '';
-          if (comment && comment.length > 500) {
+          const comment = typeof addMessage.comment === 'string' ? addMessage.comment.trim() : '';
+          if (comment && comment.length > CONFIG.LIMITS.COMMENT_MAX_LENGTH) {
             figma.ui.postMessage({
               type: 'error',
-              message: 'Comment too long (maximum 500 characters)'
+              message: `Comment too long (maximum ${CONFIG.LIMITS.COMMENT_MAX_LENGTH} characters)`
             });
             break;
           }
           
           // Add comment to changes object
           const changesWithComment = {
-            ...msg.changes,
+            ...addMessage.changes,
             comment: comment || undefined
           };
           
@@ -1856,24 +2606,89 @@ figma.ui.onmessage = async (msg: PluginMessage) => {
         }
         break;
       }
+
+      case 'getPerformanceMetrics': {
+        const metrics = PerformanceMonitor.getMetrics();
+        const stats = {
+          totalOperations: metrics.length,
+          avgDuration: metrics.length > 0 ? 
+            metrics.filter(m => m.duration).reduce((sum, m) => sum + (m.duration || 0), 0) / metrics.filter(m => m.duration).length : 0,
+          slowOperations: metrics.filter(m => m.duration && m.duration > CONFIG.PERFORMANCE.SLOW_OPERATION_THRESHOLD).length,
+          elementsProcessed: metrics.reduce((sum, m) => sum + (m.elementsProcessed || 0), 0)
+        };
         
-      default:
-        console.warn('Unknown message type:', msg.type);
+        figma.ui.postMessage({
+          type: 'performanceMetrics',
+          metrics: stats,
+          detailed: metrics
+        });
+        break;
+      }
+
+      case 'clearPerformanceMetrics': {
+        PerformanceMonitor.clearMetrics();
+        figma.ui.postMessage({
+          type: 'metricsCleared'
+        });
+        figma.notify('Performance metrics cleared');
+        break;
+      }
+
+      case 'exportLogs': {
+        const logs = Logger.exportLogs();
+        figma.ui.postMessage({
+          type: 'logsExported',
+          logs: logs
+        });
+        break;
+      }
+
+      case 'clearLogs': {
+        Logger.clearLogs();
+        figma.ui.postMessage({
+          type: 'logsCleared'
+        });
+        figma.notify('Logs cleared');
+        break;
+      }
+
+      case 'setLogLevel': {
+        const setLevelMessage = msg as { type: 'setLogLevel'; level: number };
+        if (typeof setLevelMessage.level === 'number' && 
+            setLevelMessage.level >= 0 && setLevelMessage.level <= 3) {
+          Logger.setLogLevel(setLevelMessage.level);
+          figma.ui.postMessage({
+            type: 'logLevelSet',
+            level: setLevelMessage.level
+          });
+          figma.notify(`Log level set to ${['DEBUG', 'INFO', 'WARN', 'ERROR'][setLevelMessage.level]}`);
+        } else {
+          figma.ui.postMessage({
+            type: 'error',
+            message: 'Invalid log level'
+          });
+        }
+        break;
+      }
+        
+      default: {
+        const unknownMessage = msg as { type: string };
+        console.warn('Unknown message type:', unknownMessage.type);
         figma.ui.postMessage({
           type: 'error',
-          message: 'Unknown command: ' + msg.type
+          message: 'Unknown command: ' + unknownMessage.type
         });
+        break;
+      }
     }
-  } catch (error) {
-    console.error('Error in message handler:', error);
-    figma.ui.postMessage({
-      type: 'error',
-      message: 'Error: ' + (error instanceof Error ? error.message : String(error))
-    });
-    figma.notify('Error occurred', { error: true });
-  }
+  }, 'Message Handler');
 };
 
-// ======================== PLUGIN INITIALIZATION ========================
+// ========================================================================================
+// PLUGIN INITIALIZATION
+// ========================================================================================
+// This section contains the final plugin initialization code that starts the entire
+// plugin lifecycle when loaded by Figma.
 
 initializePlugin();
+

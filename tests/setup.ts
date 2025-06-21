@@ -2,11 +2,16 @@
 
 // Extend Jest matchers if needed
 declare global {
+  interface CustomMatchers<R = unknown> {
+    toBeValidElement(): R;
+    toHaveValidChanges(): R;
+  }
+  
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace jest {
-    interface Matchers<R> {
-      toBeValidElement(): R;
-      toHaveValidChanges(): R;
-    }
+    interface Expect extends CustomMatchers {}
+    interface Matchers<R> extends CustomMatchers<R> {}
+    interface InverseAsymmetricMatchers extends CustomMatchers {}
   }
 }
 
