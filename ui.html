@@ -606,6 +606,57 @@
   </div>
 
   <script>
+    // ======================== CONSTANTS ========================
+
+    /**
+     * Application configuration constants
+     * Centralizes all magic numbers and configuration values
+     */
+    const CONFIG = {
+      /** Maximum allowed length for user comments */
+      MAX_COMMENT_LENGTH: 500,
+      
+      /** Debounce delay for refresh operations in milliseconds */
+      REFRESH_DEBOUNCE_DELAY: 300,
+      
+      /** Maximum width for message text containers */
+      MESSAGE_TEXT_MAX_WIDTH: 280,
+      
+      /** Animation duration for progress transitions */
+      PROGRESS_ANIMATION_DURATION: 300,
+      
+      /** Locale for date formatting */
+      DATE_LOCALE: 'en-US'
+    };
+
+    /**
+     * UI element selectors
+     * Centralizes all DOM element ID references
+     */
+    const SELECTORS = {
+      APP_CONTAINER: 'app',
+      INITIALIZE_BUTTON: 'initialize-button',
+      VIEW_RECORDS_BUTTON: 'view-records-button', 
+      OK_BUTTON: 'ok-button',
+      BACK_BUTTON: 'back-button',
+      REFRESH_BUTTON: 'refresh-button',
+      ADD_TO_FIGMA_BUTTON: 'add-to-figma-button',
+      SKIP_VERSION_BUTTON: 'skip-version-button',
+      COMMENT_INPUT: 'comment-input'
+    };
+
+    /**
+     * Message types for plugin communication
+     * Ensures consistent message type strings
+     */
+    const MESSAGE_TYPES = {
+      INITIALIZE: 'initialize',
+      REFRESH: 'refresh',
+      ADD_TO_FIGMA: 'addToFigma',
+      SKIP_VERSION: 'skipVersion',
+      VIEW_RECORDS: 'viewRecords'
+    };
+
     // ======================== UTILITY FUNCTIONS ========================
 
     /**
@@ -616,14 +667,23 @@
      * @returns {string} Formatted date string (e.g., "Jan 15, 2024, 2:30 PM")
      */
     function formatDate(timestamp) {
-      const date = new Date(timestamp);
-      return date.toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) {
+          throw new Error('Invalid timestamp');
+        }
+        
+        return date.toLocaleString(CONFIG.DATE_LOCALE, {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        return 'Invalid date';
+      }
     }
 
     /**
@@ -634,27 +694,65 @@
      * @returns {string} Human-readable type name
      */
     function formatElementType(type) {
-      switch (type) {
-        case 'component':
-          return 'Component';
-        case 'componentSet':
-          return 'Component Set';
-        case 'textStyle':
-          return 'Text Style';
-        case 'colorStyle':
-        case 'paintStyle': // Legacy support for old data
-          return 'Color Style';
-        case 'effectStyle':
-          return 'Effect Style';
-        case 'gridStyle':
-          return 'Grid Style';
-        case 'variableCollection':
-          return 'Variable Collection';
-        case 'variable':
-          return 'Variable';
-        default:
-          return type.charAt(0).toUpperCase() + type.slice(1);
+      if (!type || typeof type !== 'string') {
+        return 'Unknown';
       }
+
+      const typeMap = {
+        'component': 'Component',
+        'componentSet': 'Component Set',
+        'textStyle': 'Text Style',
+        'colorStyle': 'Color Style',
+        'paintStyle': 'Color Style', // Legacy support
+        'effectStyle': 'Effect Style',
+        'gridStyle': 'Grid Style',
+        'variableCollection': 'Variable Collection',
+        'variable': 'Variable'
+      };
+
+      return typeMap[type] || type.charAt(0).toUpperCase() + type.slice(1);
+    }
+
+    /**
+     * Safely escapes HTML to prevent XSS attacks.
+     * Encodes potentially dangerous characters in user input.
+     * 
+     * @param {string} text - Text to escape
+     * @returns {string} HTML-safe escaped text
+     */
+    function escapeHtml(text) {
+      if (!text || typeof text !== 'string') {
+        return '';
+      }
+
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    /**
+     * Validates and sanitizes user comment input.
+     * Checks length limits and sanitizes content.
+     * 
+     * @param {string} comment - Raw comment input
+     * @returns {Object} Validation result with isValid flag and sanitized comment
+     */
+    function validateComment(comment) {
+      if (typeof comment !== 'string') {
+        return { isValid: false, comment: '', error: 'Comment must be text' };
+      }
+
+      const trimmed = comment.trim();
+      
+      if (trimmed.length > CONFIG.MAX_COMMENT_LENGTH) {
+        return { 
+          isValid: false, 
+          comment: trimmed, 
+          error: `Comment too long (maximum ${CONFIG.MAX_COMMENT_LENGTH} characters)` 
+        };
+      }
+
+      return { isValid: true, comment: trimmed, error: null };
     }
 
     /**
@@ -670,30 +768,41 @@
      * @returns {string} Formatted component name with variants
      */
     function formatComponentName(item) {
-      if (item.type === 'component' && item.variantProperties && Object.keys(item.variantProperties).length > 0) {
-        // If we have the parent component set name, use it instead of the component's name
-        const baseName = item.parentName || item.name.split('/')[0];
+      if (!item || typeof item !== 'object') {
+        return 'Unknown';
+      }
+
+      if (item.type === 'component' && item.variantProperties && 
+          Object.keys(item.variantProperties).length > 0) {
         
-        // Format variant properties as Prop1=Value1, Prop2=Value2
-        const variantProps = item.variantProperties;
-        const propKeys = Object.keys(variantProps);
-        
-        // Filter out any empty values or properties that might duplicate the parent name
-        const filteredProps = propKeys.filter(prop => {
-          const value = variantProps[prop];
-          return value && value.trim() !== '' && value.toLowerCase() !== baseName.toLowerCase();
-        });
-        
-        if (filteredProps.length > 0) {
-          const variantPropsString = filteredProps
-            .map(prop => `${prop}=${variantProps[prop]}`)
-            .join(', ');
+        try {
+          // If we have the parent component set name, use it instead of the component's name
+          const baseName = item.parentName || item.name.split('/')[0];
           
-          return `${baseName} (${variantPropsString})`;
+          // Format variant properties as Prop1=Value1, Prop2=Value2
+          const variantProps = item.variantProperties;
+          const propKeys = Object.keys(variantProps);
+          
+          // Filter out any empty values or properties that might duplicate the parent name
+          const filteredProps = propKeys.filter(prop => {
+            const value = variantProps[prop];
+            return value && value.trim() !== '' && 
+                   value.toLowerCase() !== baseName.toLowerCase();
+          });
+          
+          if (filteredProps.length > 0) {
+            const variantPropsString = filteredProps
+              .map(prop => `${escapeHtml(prop)}=${escapeHtml(variantProps[prop])}`)
+              .join(', ');
+            
+            return `${escapeHtml(baseName)} (${variantPropsString})`;
+          }
+        } catch (error) {
+          console.error('Error formatting component name:', error);
         }
       }
       
-      return item.name;
+      return escapeHtml(item.name || 'Unknown');
     }
     
     // ======================== SCREEN RENDERING FUNCTIONS ========================
@@ -708,7 +817,7 @@
       return `
         <div class="content-container">
           <div class="empty-state">
-            <div class="empty-state-icon">📋</div>
+            <div class="empty-state-icon" role="img" aria-label="Clipboard icon">📋</div>
             <h1 class="title">Initialize System</h1>
             <p class="message-text">
               Track changes to design system elements like components, styles, and variables. 
@@ -717,7 +826,11 @@
           </div>
         </div>
         <div class="actions-container">
-          <button class="button button-primary" id="initialize-button">Initialize System</button>
+          <button class="button button-primary" id="${SELECTORS.INITIALIZE_BUTTON}" 
+                  aria-describedby="init-description">Initialize System</button>
+          <div id="init-description" class="sr-only">
+            Start tracking design system changes by recording current state
+          </div>
         </div>
       `;
     }
@@ -730,21 +843,23 @@
      * @returns {string} HTML string for initialization complete screen
      */
     function renderInitializedScreen(count) {
+      const safeCount = typeof count === 'number' && count >= 0 ? count : 0;
+      
       return `
         <div class="content-container">
           <div class="empty-state">
-            <div class="empty-state-icon">✅</div>
+            <div class="empty-state-icon" role="img" aria-label="Success checkmark">✅</div>
             <h1 class="title">Initialization Complete</h1>
             <p class="message-text">
-              Successfully recorded ${count} design system elements. 
+              Successfully recorded ${safeCount} design system elements. 
               Future changes will be tracked automatically.
             </p>
-            <p class="element-count">Elements recorded: ${count}</p>
+            <p class="element-count">Elements recorded: ${safeCount}</p>
           </div>
         </div>
         <div class="actions-container">
-          <button class="button button-primary" id="view-records-button">View Records</button>
-          <button class="button" id="ok-button">OK</button>
+          <button class="button button-primary" id="${SELECTORS.VIEW_RECORDS_BUTTON}">View Records</button>
+          <button class="button" id="${SELECTORS.OK_BUTTON}">OK</button>
         </div>
       `;
     }
@@ -758,11 +873,17 @@
      * @returns {string} HTML string for records view screen
      */
     function renderRecordsScreen(elements, timestamp) {
+      if (!Array.isArray(elements)) {
+        return renderErrorScreen('Invalid records data');
+      }
+
       const date = formatDate(timestamp);
       
       // Group elements by type for organized display
       const groupedElements = {};
       elements.forEach(element => {
+        if (!element || !element.type) return;
+        
         if (!groupedElements[element.type]) {
           groupedElements[element.type] = [];
         }
@@ -780,9 +901,9 @@
                 <h2 class="section-title">${formatElementType(type)}s</h2>
                 <span class="badge badge-added">${items.length}</span>
               </div>
-              <div class="items-container">
+              <div class="items-container" role="list">
                 ${items.map(item => `
-                  <div class="item">
+                  <div class="item" role="listitem">
                     <div class="item-type">${formatElementType(item.type)}</div>
                     <div class="item-name">${formatComponentName(item)}</div>
                   </div>
@@ -804,7 +925,7 @@
           ${elementsHtml}
         </div>
         <div class="actions-container">
-          <button class="button" id="back-button">Back</button>
+          <button class="button" id="${SELECTORS.BACK_BUTTON}">Back</button>
         </div>
       `;
     }
@@ -823,15 +944,49 @@
      * @returns {string} HTML string for main application screen
      */
     function renderMainScreen(changes, timestamp, hasChanges) {
+      if (!changes || typeof changes !== 'object') {
+        return renderErrorScreen('Invalid changes data');
+      }
+
       const date = formatDate(timestamp);
       
       // Log changes for debugging purposes
       console.log('Rendering main screen with changes:', {
         hasChanges,
-        added: changes.added.length,
-        modified: changes.modified.length,
-        removed: changes.removed.length
+        added: changes.added?.length || 0,
+        modified: changes.modified?.length || 0,
+        removed: changes.removed?.length || 0
       });
+
+      /**
+       * Renders a section of changes with consistent structure
+       * @param {string} title - Section title
+       * @param {Array} items - Array of changed elements
+       * @param {string} badgeClass - CSS class for the badge
+       * @returns {string} HTML for the changes section
+       */
+      function renderChangesSection(title, items, badgeClass) {
+        if (!Array.isArray(items) || items.length === 0) {
+          return '';
+        }
+
+        return `
+          <div class="section">
+            <div class="section-with-count">
+              <h2 class="section-title">${escapeHtml(title)}</h2>
+              <span class="badge ${badgeClass}">${items.length}</span>
+            </div>
+            <div class="items-container" role="list" aria-label="${title} elements">
+              ${items.map(item => `
+                <div class="item" role="listitem">
+                  <div class="item-type">${formatElementType(item.type)}</div>
+                  <div class="item-name">${formatComponentName(item)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
       
       return `
         <div class="content-container">
@@ -842,57 +997,9 @@
           
           ${hasChanges ? `
             <div class="divider"></div>
-            
-            ${changes.added.length > 0 ? `
-              <div class="section">
-                <div class="section-with-count">
-                  <h2 class="section-title">Added</h2>
-                  <span class="badge badge-added">${changes.added.length}</span>
-                </div>
-                <div class="items-container">
-                  ${changes.added.map(item => `
-                    <div class="item">
-                      <div class="item-type">${formatElementType(item.type)}</div>
-                      <div class="item-name">${formatComponentName(item)}</div>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            ` : ''}
-            
-            ${changes.modified.length > 0 ? `
-              <div class="section">
-                <div class="section-with-count">
-                  <h2 class="section-title">Changed</h2>
-                  <span class="badge badge-changed">${changes.modified.length}</span>
-                </div>
-                <div class="items-container">
-                  ${changes.modified.map(item => `
-                    <div class="item">
-                      <div class="item-type">${formatElementType(item.type)}</div>
-                      <div class="item-name">${formatComponentName(item)}</div>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            ` : ''}
-            
-            ${changes.removed.length > 0 ? `
-              <div class="section">
-                <div class="section-with-count">
-                  <h2 class="section-title">Removed</h2>
-                  <span class="badge badge-removed">${changes.removed.length}</span>
-                </div>
-                <div class="items-container">
-                  ${changes.removed.map(item => `
-                    <div class="item">
-                      <div class="item-type">${formatElementType(item.type)}</div>
-                      <div class="item-name">${formatComponentName(item)}</div>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            ` : ''}
+            ${renderChangesSection('Added', changes.added, 'badge-added')}
+            ${renderChangesSection('Changed', changes.modified, 'badge-changed')}
+            ${renderChangesSection('Removed', changes.removed, 'badge-removed')}
           ` : `
             <div class="section">
               <div class="no-changes">No changes detected since last update</div>
@@ -905,16 +1012,31 @@
             <div class="comment-container">
               <textarea 
                 class="comment-input" 
-                id="comment-input" 
+                id="${SELECTORS.COMMENT_INPUT}" 
                 placeholder="Describe the changes or provide context..."
-                maxlength="500"
+                maxlength="${CONFIG.MAX_COMMENT_LENGTH}"
+                aria-label="Change description comment"
+                aria-describedby="comment-help"
               ></textarea>
+              <div id="comment-help" class="sr-only">
+                Optional description for this changelog entry, maximum ${CONFIG.MAX_COMMENT_LENGTH} characters
+              </div>
             </div>
           ` : ''}
-          <button class="button button-primary" id="add-to-figma-button" ${!hasChanges ? 'disabled' : ''}>Add to Figma</button>
-          <button class="button" id="skip-version-button" ${!hasChanges ? 'disabled' : ''}>Skip Version</button>
-          <button class="button" id="refresh-button">Refresh</button>
-          <button class="button" id="view-records-button">View Records</button>
+          <button class="button button-primary" id="${SELECTORS.ADD_TO_FIGMA_BUTTON}" 
+                  ${!hasChanges ? 'disabled' : ''} 
+                  aria-describedby="add-to-figma-help">Add to Figma</button>
+          <button class="button" id="${SELECTORS.SKIP_VERSION_BUTTON}" 
+                  ${!hasChanges ? 'disabled' : ''}
+                  aria-describedby="skip-version-help">Skip Version</button>
+          <button class="button" id="${SELECTORS.REFRESH_BUTTON}">Refresh</button>
+          <button class="button" id="${SELECTORS.VIEW_RECORDS_BUTTON}">View Records</button>
+          <div id="add-to-figma-help" class="sr-only">
+            Create a changelog entry in Figma with detected changes
+          </div>
+          <div id="skip-version-help" class="sr-only">
+            Update tracking data without creating a changelog entry
+          </div>
         </div>
       `;
     }
@@ -928,16 +1050,24 @@
      * @returns {string} HTML string for loading screen
      */
     function renderLoadingScreen(message = 'Processing...', progress = null) {
+      const safeMessage = escapeHtml(message || 'Processing...');
+      const safeProgress = typeof progress === 'number' && 
+                          progress >= 0 && progress <= 100 ? progress : null;
+      
       return `
         <div class="center-message">
-          <div class="loading-spinner"></div>
-          <div class="message-text">${message}</div>
-          ${progress !== null ? `
+          <div class="loading-spinner" role="status" aria-label="Loading"></div>
+          <div class="message-text">${safeMessage}</div>
+          ${safeProgress !== null ? `
             <div class="progress-container">
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: ${progress}%"></div>
+              <div class="progress-bar" role="progressbar" 
+                   aria-valuenow="${safeProgress}" 
+                   aria-valuemin="0" 
+                   aria-valuemax="100"
+                   aria-label="Progress ${safeProgress}%">
+                <div class="progress-fill" style="width: ${safeProgress}%"></div>
               </div>
-              <div class="progress-text">${progress}%</div>
+              <div class="progress-text">${safeProgress}%</div>
             </div>
           ` : ''}
         </div>
@@ -952,11 +1082,13 @@
      * @returns {string} HTML string for error screen
      */
     function renderErrorScreen(message) {
+      const safeMessage = escapeHtml(message || 'An unknown error occurred');
+      
       return `
         <div class="center-message">
-          <div class="empty-state-icon">⚠️</div>
-          <div class="message-text">Error: ${message}</div>
-          <button class="button button-primary" id="refresh-button">Retry</button>
+          <div class="empty-state-icon" role="img" aria-label="Warning icon">⚠️</div>
+          <div class="message-text" role="alert">Error: ${safeMessage}</div>
+          <button class="button button-primary" id="${SELECTORS.REFRESH_BUTTON}">Retry</button>
         </div>
       `;
     }
@@ -989,8 +1121,23 @@
       
       refreshTimeout = setTimeout(() => {
         renderUI(renderLoadingScreen('Scanning for changes...'));
-        parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
-      }, 300);
+        sendMessage({ type: MESSAGE_TYPES.REFRESH });
+      }, CONFIG.REFRESH_DEBOUNCE_DELAY);
+    }
+
+    /**
+     * Safely sends a message to the plugin main thread with error handling.
+     * Wraps postMessage calls with try-catch for robustness.
+     * 
+     * @param {Object} message - Message object to send
+     */
+    function sendMessage(message) {
+      try {
+        parent.postMessage({ pluginMessage: message }, '*');
+      } catch (error) {
+        console.error('Error sending message to plugin:', error);
+        renderUI(renderErrorScreen('Communication error with plugin'));
+      }
     }
     
     /**
@@ -1000,43 +1147,43 @@
      */
     function setupEventListeners() {
       // Initialize System button - starts the tracking system
-      const initializeButton = document.getElementById('initialize-button');
+      const initializeButton = document.getElementById(SELECTORS.INITIALIZE_BUTTON);
       if (initializeButton) {
         initializeButton.addEventListener('click', () => {
           renderUI(renderLoadingScreen('Initializing system...'));
-          parent.postMessage({ pluginMessage: { type: 'initialize' } }, '*');
+          sendMessage({ type: MESSAGE_TYPES.INITIALIZE });
         });
       }
       
       // View Records button - shows all tracked elements
-      const viewRecordsButton = document.getElementById('view-records-button');
+      const viewRecordsButton = document.getElementById(SELECTORS.VIEW_RECORDS_BUTTON);
       if (viewRecordsButton) {
         viewRecordsButton.addEventListener('click', () => {
           renderUI(renderLoadingScreen('Loading records...'));
-          parent.postMessage({ pluginMessage: { type: 'viewRecords' } }, '*');
+          sendMessage({ type: MESSAGE_TYPES.VIEW_RECORDS });
         });
       }
       
       // OK button - continues from initialization complete screen
-      const okButton = document.getElementById('ok-button');
+      const okButton = document.getElementById(SELECTORS.OK_BUTTON);
       if (okButton) {
         okButton.addEventListener('click', () => {
           renderUI(renderLoadingScreen('Scanning for changes...'));
-          parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+          sendMessage({ type: MESSAGE_TYPES.REFRESH });
         });
       }
       
       // Back button - returns from records view to main screen
-      const backButton = document.getElementById('back-button');
+      const backButton = document.getElementById(SELECTORS.BACK_BUTTON);
       if (backButton) {
         backButton.addEventListener('click', () => {
           renderUI(renderLoadingScreen('Scanning for changes...'));
-          parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
+          sendMessage({ type: MESSAGE_TYPES.REFRESH });
         });
       }
       
       // Refresh button - rescans for changes
-      const refreshButton = document.getElementById('refresh-button');
+      const refreshButton = document.getElementById(SELECTORS.REFRESH_BUTTON);
       if (refreshButton) {
         refreshButton.addEventListener('click', () => {
           debouncedRefresh();
@@ -1044,38 +1191,44 @@
       }
       
       // Add to Figma button - creates changelog entry
-      const addToFigmaButton = document.getElementById('add-to-figma-button');
+      const addToFigmaButton = document.getElementById(SELECTORS.ADD_TO_FIGMA_BUTTON);
       if (addToFigmaButton) {
         addToFigmaButton.addEventListener('click', () => {
-          if (currentChanges) {
-            // Get comment from input field
-            const commentInput = document.getElementById('comment-input');
-            const comment = commentInput ? commentInput.value.trim() : '';
-            
-            renderUI(renderLoadingScreen('Adding to Figma...'));
-            parent.postMessage({ 
-              pluginMessage: { 
-                type: 'addToFigma',
-                changes: currentChanges,
-                comment: comment
-              } 
-            }, '*');
+          if (!currentChanges) {
+            renderUI(renderErrorScreen('No changes data available'));
+            return;
           }
+
+          // Get and validate comment from input field
+          const commentInput = document.getElementById(SELECTORS.COMMENT_INPUT);
+          const rawComment = commentInput ? commentInput.value : '';
+          const validation = validateComment(rawComment);
+          
+          if (!validation.isValid) {
+            renderUI(renderErrorScreen(validation.error));
+            return;
+          }
+          
+          renderUI(renderLoadingScreen('Adding to Figma...'));
+          sendMessage({ 
+            type: MESSAGE_TYPES.ADD_TO_FIGMA,
+            changes: currentChanges,
+            comment: validation.comment
+          });
         });
       }
       
       // Skip Version button - updates tracking without creating changelog
-      const skipVersionButton = document.getElementById('skip-version-button');
+      const skipVersionButton = document.getElementById(SELECTORS.SKIP_VERSION_BUTTON);
       if (skipVersionButton) {
         skipVersionButton.addEventListener('click', () => {
-          if (currentChanges) {
-            renderUI(renderLoadingScreen('Skipping version...'));
-            parent.postMessage({ 
-              pluginMessage: { 
-                type: 'skipVersion'
-              } 
-            }, '*');
+          if (!currentChanges) {
+            renderUI(renderErrorScreen('No changes data available'));
+            return;
           }
+          
+          renderUI(renderLoadingScreen('Skipping version...'));
+          sendMessage({ type: MESSAGE_TYPES.SKIP_VERSION });
         });
       }
     }
@@ -1083,13 +1236,29 @@
     /**
      * Helper function to render UI and set up event listeners.
      * Combines DOM manipulation with event binding for complete UI updates.
+     * Includes error handling for DOM operations.
      * 
      * @param {string} html - HTML string to render in the app container
      */
     function renderUI(html) {
-      const appElement = document.getElementById('app');
-      appElement.innerHTML = html;
-      setupEventListeners();
+      try {
+        const appElement = document.getElementById(SELECTORS.APP_CONTAINER);
+        if (!appElement) {
+          console.error('App container element not found');
+          return;
+        }
+        
+        appElement.innerHTML = html;
+        setupEventListeners();
+      } catch (error) {
+        console.error('Error rendering UI:', error);
+        
+        // Fallback error display
+        const appElement = document.getElementById(SELECTORS.APP_CONTAINER);
+        if (appElement) {
+          appElement.innerHTML = renderErrorScreen('UI rendering failed');
+        }
+      }
     }
 
     // ======================== MESSAGE HANDLING ========================
@@ -1097,73 +1266,111 @@
     /**
      * Main message handler for plugin communication.
      * Processes messages from the plugin's main thread and updates UI accordingly.
-     * Handles all plugin states and user interactions.
+     * Handles all plugin states and user interactions with comprehensive error handling.
      */
     window.onmessage = (event) => {
-      const message = event.data.pluginMessage;
-      
-      if (!message) return;
-      
-      switch (message.type) {
-        case 'init':
-          // Show initialization screen when no tracking data exists
-          renderUI(renderInitScreen());
-          break;
-          
-        case 'initialized':
-          // Show initialization complete screen with element count
-          renderUI(renderInitializedScreen(message.count));
-          break;
-          
-        case 'scanComplete':
-          // Show main screen with no changes detected
-          currentChanges = { added: [], modified: [], removed: [] };
-          renderUI(renderMainScreen(currentChanges, Date.now(), false));
-          break;
-          
-        case 'changes':
-          // Show main screen with detected changes
-          currentChanges = message.changes;
-          renderUI(renderMainScreen(message.changes, message.timestamp, message.hasChanges));
-          break;
-          
-        case 'records':
-          // Show records screen with all tracked elements
-          renderUI(renderRecordsScreen(message.elements, message.timestamp));
-          break;
-          
-        case 'addedToFigma':
-          // Reset after successful changelog creation
-          currentChanges = { added: [], modified: [], removed: [] };
-          renderUI(renderMainScreen(currentChanges, Date.now(), false));
-          break;
-          
-        case 'versionSkipped':
-          // Reset after skipping version update
-          currentChanges = { added: [], modified: [], removed: [] };
-          renderUI(renderMainScreen(currentChanges, Date.now(), false));
-          break;
-          
-        case 'updated':
-          // Refresh after tracking data update
-          renderUI(renderLoadingScreen('Scanning for changes...'));
-          parent.postMessage({ pluginMessage: { type: 'refresh' } }, '*');
-          break;
-          
-        case 'error':
-          // Show error screen with retry option
-          renderUI(renderErrorScreen(message.message));
-          break;
-          
-        case 'progress':
-          // Update loading screen with progress information
-          renderUI(renderLoadingScreen(message.message, message.progress));
-          break;
-          
-        default:
-          console.log('Unknown message type:', message.type);
+      try {
+        const message = event.data.pluginMessage;
+        
+        if (!message || typeof message !== 'object') {
+          console.warn('Received invalid message:', event.data);
+          return;
+        }
+        
+        switch (message.type) {
+          case 'init':
+            // Show initialization screen when no tracking data exists
+            renderUI(renderInitScreen());
+            break;
+            
+          case 'initialized':
+            // Show initialization complete screen with element count
+            renderUI(renderInitializedScreen(message.count));
+            break;
+            
+          case 'scanComplete':
+            // Show main screen with no changes detected
+            currentChanges = { added: [], modified: [], removed: [] };
+            renderUI(renderMainScreen(currentChanges, Date.now(), false));
+            break;
+            
+          case 'changes':
+            // Show main screen with detected changes
+            if (message.changes && typeof message.changes === 'object') {
+              currentChanges = message.changes;
+              renderUI(renderMainScreen(message.changes, message.timestamp, message.hasChanges));
+            } else {
+              renderUI(renderErrorScreen('Invalid changes data received'));
+            }
+            break;
+            
+          case 'records':
+            // Show records screen with all tracked elements
+            if (Array.isArray(message.elements)) {
+              renderUI(renderRecordsScreen(message.elements, message.timestamp));
+            } else {
+              renderUI(renderErrorScreen('Invalid records data received'));
+            }
+            break;
+            
+          case 'addedToFigma':
+            // Reset after successful changelog creation
+            currentChanges = { added: [], modified: [], removed: [] };
+            renderUI(renderMainScreen(currentChanges, Date.now(), false));
+            break;
+            
+          case 'versionSkipped':
+            // Reset after skipping version update
+            currentChanges = { added: [], modified: [], removed: [] };
+            renderUI(renderMainScreen(currentChanges, Date.now(), false));
+            break;
+            
+          case 'updated':
+            // Refresh after tracking data update
+            renderUI(renderLoadingScreen('Scanning for changes...'));
+            sendMessage({ type: MESSAGE_TYPES.REFRESH });
+            break;
+            
+          case 'error':
+            // Show error screen with retry option
+            const errorMessage = typeof message.message === 'string' ? 
+                                message.message : 'Unknown error occurred';
+            renderUI(renderErrorScreen(errorMessage));
+            break;
+            
+          case 'progress':
+            // Update loading screen with progress information
+            const progressMessage = typeof message.message === 'string' ? 
+                                  message.message : 'Processing...';
+            const progress = typeof message.progress === 'number' ? 
+                           message.progress : null;
+            renderUI(renderLoadingScreen(progressMessage, progress));
+            break;
+            
+          default:
+            console.warn('Unknown message type:', message.type);
+        }
+      } catch (error) {
+        console.error('Error handling plugin message:', error);
+        renderUI(renderErrorScreen('Message processing failed'));
       }
     };
+
+    // Add hidden accessibility helper styles
+    const style = document.createElement('style');
+    style.textContent = `
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        border: 0;
+      }
+    `;
+    document.head.appendChild(style);
   </script>
 </body>
 </html> 
