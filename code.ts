@@ -1,23 +1,55 @@
+/* eslint-disable @figma/figma-plugins/dynamic-page-find-method-advice */
 /// <reference types="@figma/plugin-typings" />
 
 /**
- * Figma Plugin: Logify - Design System Tracker
- * Tracks changes to design system elements and creates changelog entries
+ * Logify - Design System Tracker
+ * 
+ * A Figma plugin that automatically tracks changes to design system elements
+ * and creates detailed changelog entries with visual documentation.
+ * 
+ * This plugin monitors components, styles, and variables for modifications,
+ * additions, and removals, providing comprehensive change tracking for
+ * design systems.
  */
 
-// ======================== TYPES & INTERFACES ========================
+// ======================== TYPE DEFINITIONS ========================
 
+/**
+ * Represents a design system element that can be tracked for changes.
+ * This includes components, styles, and variables with their metadata.
+ */
 interface DesignSystemElement {
+  /** Unique identifier for the element */
   id: string;
+  
+  /** Display name of the element */
   name: string;
+  
+  /** Type classification of the design system element */
   type: 'component' | 'componentSet' | 'textStyle' | 'colorStyle' | 'variable' | 'variableCollection';
+  
+  /** Optional key identifier for published elements */
   key?: string;
+  
+  /** Optional description or documentation */
   description?: string;
+  
+  /** Variant properties for component sets and instances */
   variantProperties?: { [property: string]: string } | null;
+  
+  /** Hash of variant properties for change detection */
   variantPropertiesHash?: string;
+  
+  /** Parent element name for nested structures */
   parentName?: string;
+  
+  /** Last modification timestamp */
   modifiedAt?: number;
+  
+  /** Last update timestamp */
   updatedAt?: number;
+  
+  // Property hashes for efficient change detection
   fillsHash?: string;
   strokesHash?: string;
   effectsHash?: string;
@@ -35,7 +67,8 @@ interface DesignSystemElement {
   interactionHash?: string;
   instanceOverridesHash?: string;
   exposedPropertiesHash?: string;
-  // Raw property data for detailed comparison
+  
+  // Detailed property data for comparison
   fillsData?: string;
   strokesData?: string;
   cornerRadiusData?: string;
@@ -46,54 +79,103 @@ interface DesignSystemElement {
 }
 
 /**
- * Detailed property change information
+ * Detailed information about a specific property change.
  */
 interface PropertyChangeInfo {
+  /** Internal property name */
   property: string;
+  
+  /** Human-readable display name */
   displayName: string;
+  
+  /** Previous property value */
   oldValue: string;
+  
+  /** New property value */
   newValue: string;
+  
+  /** Type of change performed */
   changeType: 'added' | 'removed' | 'modified';
 }
 
 /**
- * Enhanced element with detailed changes
+ * Enhanced element with detailed change information.
  */
 interface DetailedModifiedElement extends DesignSystemElement {
+  /** Array of detailed property changes */
   changes: PropertyChangeInfo[];
+  
+  /** Human-readable summary of all changes */
   changesSummary: string;
 }
 
+/**
+ * Container for tracking data with timestamp.
+ */
 interface TrackingData {
+  /** Timestamp when data was captured */
   timestamp: number;
+  
+  /** Array of tracked design system elements */
   elements: DesignSystemElement[];
 }
 
+/**
+ * Change detection results categorized by operation type.
+ */
 interface Changes {
+  /** Newly added elements */
   added: DesignSystemElement[];
+  
+  /** Modified existing elements with detailed changes */
   modified: DetailedModifiedElement[];
+  
+  /** Removed elements */
   removed: DesignSystemElement[];
+  
+  /** Optional user comment for the changelog entry */
   comment?: string;
 }
 
+/**
+ * Message structure for plugin communication.
+ */
 interface PluginMessage {
+  /** Message type identifier */
   type: string;
+  
+  /** Additional message data */
   [key: string]: unknown;
 }
 
 // ======================== CONSTANTS ========================
 
+/** Plugin namespace for data storage */
 const PLUGIN_NAMESPACE = 'changelog_tracker';
+
+/** Storage key for tracking data */
 const TRACKING_DATA_KEY = 'trackingData';
+
+/** Maximum chunk size for data storage (Figma limit) */
 const CHUNK_SIZE_LIMIT = 90000;
+
+/** Name of the dedicated changelog page */
 const LOGIFY_PAGE_NAME = "🖹 Logify";
+
+/** Name of the main changelog container */
 const CHANGELOG_CONTAINER_NAME = "Changelog Container";
+
+/** Prefix for individual changelog entries */
 const ENTRY_NAME_PREFIX = "Logify Entry";
 
 // ======================== UTILITY FUNCTIONS ========================
 
 /**
- * Simple hash function (djb2 algorithm)
+ * Generates a hash string using the djb2 algorithm.
+ * This fast hashing function is used for change detection and data integrity.
+ * 
+ * @param str - The input string to hash
+ * @returns A hexadecimal hash string
  */
 function simpleHash(str: string): string {
   let hash = 5381;
@@ -105,7 +187,11 @@ function simpleHash(str: string): string {
 }
 
 /**
- * Generic hash function for objects
+ * Creates a hash for any object by serializing it to JSON.
+ * Used for comparing complex objects for changes.
+ * 
+ * @param obj - The object to hash
+ * @returns A hash string, or empty string if object is null/undefined
  */
 function hashObject(obj: unknown): string {
   if (!obj) return '';
@@ -114,6 +200,13 @@ function hashObject(obj: unknown): string {
 
 // ======================== VALIDATION FUNCTIONS ========================
 
+/**
+ * Type guard that validates if an unknown object is a DesignSystemElement.
+ * Ensures the object has required properties with correct types.
+ * 
+ * @param element - The object to validate
+ * @returns True if the object is a valid DesignSystemElement
+ */
 function validateDesignSystemElement(element: unknown): element is DesignSystemElement {
   return element !== null &&
          typeof element === 'object' &&
@@ -126,6 +219,13 @@ function validateDesignSystemElement(element: unknown): element is DesignSystemE
          typeof (element as Record<string, unknown>).type === 'string';
 }
 
+/**
+ * Type guard that validates if an unknown object is valid TrackingData.
+ * Checks structure and validates all contained elements.
+ * 
+ * @param data - The object to validate
+ * @returns True if the object is valid TrackingData
+ */
 function validateTrackingData(data: unknown): data is TrackingData {
   return data !== null &&
          data !== undefined &&
@@ -137,6 +237,13 @@ function validateTrackingData(data: unknown): data is TrackingData {
          ((data as Record<string, unknown>).elements as unknown[]).every(validateDesignSystemElement);
 }
 
+/**
+ * Type guard that validates if an unknown object represents valid Changes.
+ * Ensures all change categories contain valid elements.
+ * 
+ * @param changes - The object to validate
+ * @returns True if the object represents valid Changes
+ */
 function validateChanges(changes: unknown): changes is Changes {
   return changes !== null &&
          changes !== undefined &&
@@ -155,7 +262,11 @@ function validateChanges(changes: unknown): changes is Changes {
 // ======================== DATA COMPRESSION ========================
 
 /**
- * Compress data for storage with shorter property names
+ * Compresses tracking data for efficient storage by using shorter property names.
+ * This reduces the storage footprint and helps stay within Figma's storage limits.
+ * 
+ * @param data - The tracking data to compress
+ * @returns Compressed data with shortened property names
  */
 function compressDataForStorage(data: TrackingData): Record<string, unknown> {
   const compressionMap = {
@@ -183,7 +294,11 @@ function compressDataForStorage(data: TrackingData): Record<string, unknown> {
 }
 
 /**
- * Decompress data from storage
+ * Decompresses tracking data from storage by restoring original property names.
+ * Reverses the compression process to return usable tracking data.
+ * 
+ * @param compressedData - The compressed data from storage
+ * @returns Decompressed tracking data with full property names
  */
 function decompressDataFromStorage(compressedData: Record<string, unknown>): TrackingData {
   const decompressionMap = {
@@ -213,7 +328,11 @@ function decompressDataFromStorage(compressedData: Record<string, unknown>): Tra
 // ======================== STORAGE FUNCTIONS ========================
 
 /**
- * Get stored tracking data with chunked support
+ * Retrieves stored tracking data from Figma's shared plugin data storage.
+ * Supports both chunked and non-chunked data for handling large datasets
+ * that exceed Figma's storage limits.
+ * 
+ * @returns The stored tracking data or null if not found or invalid
  */
 function getStoredTrackingData(): TrackingData | null {
   try {
@@ -226,6 +345,7 @@ function getStoredTrackingData(): TrackingData | null {
     const metadata = JSON.parse(metadataStr);
     let reconstructedDataStr = '';
     
+    // Reconstruct data from chunks
     for (let i = 0; i < metadata.chunkCount; i++) {
       const chunkKey = TRACKING_DATA_KEY + '_chunk_' + i;
       const chunkData = figma.root.getSharedPluginData(PLUGIN_NAMESPACE, chunkKey);
@@ -254,7 +374,11 @@ function getStoredTrackingData(): TrackingData | null {
 }
 
 /**
- * Store tracking data with chunked support
+ * Stores tracking data to Figma's shared plugin data storage.
+ * Automatically chunks data if it exceeds size limits to ensure reliable storage.
+ * 
+ * @param data - The tracking data to store
+ * @throws Error if storage operation fails
  */
 function setStoredTrackingData(data: TrackingData): void {
   try {
@@ -264,10 +388,12 @@ function setStoredTrackingData(data: TrackingData): void {
     const dataStr = JSON.stringify(compressedData);
     
     if (dataStr.length <= CHUNK_SIZE_LIMIT) {
+      // Store as single chunk
       figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_chunk_0', dataStr);
       figma.root.setSharedPluginData(PLUGIN_NAMESPACE, TRACKING_DATA_KEY + '_meta', 
         JSON.stringify({ chunkCount: 1 }));
     } else {
+      // Split into multiple chunks
       const chunks = [];
       for (let i = 0; i < dataStr.length; i += CHUNK_SIZE_LIMIT) {
         chunks.push(dataStr.slice(i, i + CHUNK_SIZE_LIMIT));
@@ -289,7 +415,8 @@ function setStoredTrackingData(data: TrackingData): void {
 }
 
 /**
- * Clear stored tracking data
+ * Removes all stored tracking data from Figma's shared plugin data storage.
+ * Clears both metadata and all data chunks.
  */
 function clearStoredTrackingData(): void {
   try {
@@ -312,7 +439,11 @@ function clearStoredTrackingData(): void {
 // ======================== SERIALIZATION FUNCTIONS ========================
 
 /**
- * Serialize paint properties
+ * Serializes paint properties (fills) into a hash for change detection.
+ * Handles different paint types including solids, gradients, and images.
+ * 
+ * @param paints - Array of paint objects to serialize
+ * @returns Hash string representing the paint properties
  */
 function serializePaintProperties(paints: readonly Paint[]): string {
   if (!paints || paints.length === 0) return '';
@@ -333,7 +464,11 @@ function serializePaintProperties(paints: readonly Paint[]): string {
 }
 
 /**
- * Serialize stroke properties
+ * Serializes stroke properties into a hash for change detection.
+ * Includes stroke weight, alignment, caps, joins, and dash patterns.
+ * 
+ * @param node - The scene node to extract stroke properties from
+ * @returns Hash string representing the stroke properties
  */
 function serializeStrokeProperties(node: SceneNode): string {
   if (!('strokes' in node)) return '';
@@ -352,7 +487,11 @@ function serializeStrokeProperties(node: SceneNode): string {
 }
 
 /**
- * Serialize effect properties
+ * Serializes visual effects (shadows, blurs) into a hash for change detection.
+ * Handles different effect types with their specific properties.
+ * 
+ * @param effects - Array of effect objects to serialize
+ * @returns Hash string representing the effect properties
  */
 function serializeEffectProperties(effects: readonly Effect[]): string {
   if (!effects || effects.length === 0) return '';
@@ -376,7 +515,11 @@ function serializeEffectProperties(effects: readonly Effect[]): string {
 }
 
 /**
- * Serialize layout properties
+ * Serializes auto-layout properties into a hash for change detection.
+ * Includes layout mode, sizing, alignment, spacing, and padding properties.
+ * 
+ * @param node - The scene node to extract layout properties from
+ * @returns Hash string representing the layout properties
  */
 function serializeLayoutProperties(node: SceneNode): string {
   if (!('layoutMode' in node)) return '';
@@ -398,7 +541,11 @@ function serializeLayoutProperties(node: SceneNode): string {
 }
 
 /**
- * Serialize geometry properties
+ * Serializes geometric properties into a hash for change detection.
+ * Includes size, position, rotation, constraints, and corner radius properties.
+ * 
+ * @param node - The scene node to extract geometry properties from
+ * @returns Hash string representing the geometry properties
  */
 function serializeGeometryProperties(node: SceneNode): string {
   const geometryData = {
@@ -419,7 +566,11 @@ function serializeGeometryProperties(node: SceneNode): string {
 }
 
 /**
- * Serialize typography properties
+ * Serializes typography properties into a hash for change detection.
+ * Only applies to text nodes and includes font, alignment, and spacing properties.
+ * 
+ * @param node - The scene node to extract typography properties from
+ * @returns Hash string representing the typography properties, or empty string for non-text nodes
  */
 function serializeTypographyProperties(node: SceneNode): string {
   if (node.type !== 'TEXT') return '';
@@ -445,10 +596,12 @@ function serializeTypographyProperties(node: SceneNode): string {
   return hashObject(typographyData);
 }
 
-
-
 /**
- * Serialize instance properties
+ * Serializes component instance properties into a hash for change detection.
+ * Includes main component reference, component properties, and overrides.
+ * 
+ * @param node - The instance node to extract properties from
+ * @returns Promise resolving to hash string representing the instance properties
  */
 async function serializeInstanceProperties(node: InstanceNode): Promise<string> {
   const mainComponent = await node.getMainComponentAsync();
@@ -466,7 +619,11 @@ async function serializeInstanceProperties(node: InstanceNode): Promise<string> 
 }
 
 /**
- * Serialize variable properties
+ * Serializes design variable properties into a hash for change detection.
+ * Includes name, description, type, values, and publishing settings.
+ * 
+ * @param variable - The variable to extract properties from
+ * @returns Hash string representing the variable properties
  */
 function serializeVariableProperties(variable: Variable): string {
   const variableData = {
@@ -487,7 +644,13 @@ function serializeVariableProperties(variable: Variable): string {
 // ======================== DETAILED COMPARISON FUNCTIONS ========================
 
 /**
- * Convert RGB to HEX format
+ * Converts RGB color values (0-1 range) to hexadecimal color format.
+ * Used for creating human-readable color representations in change descriptions.
+ * 
+ * @param r - Red component (0-1)
+ * @param g - Green component (0-1) 
+ * @param b - Blue component (0-1)
+ * @returns Hexadecimal color string in uppercase format (e.g., "#FF5733")
  */
 function rgbToHex(r: number, g: number, b: number): string {
   const toHex = (c: number) => {
@@ -498,7 +661,11 @@ function rgbToHex(r: number, g: number, b: number): string {
 }
 
 /**
- * Serialize fill data for detailed comparison
+ * Serializes fill/paint data into a human-readable format for detailed change comparison.
+ * Converts complex paint objects into descriptive strings showing colors, gradients, and patterns.
+ * 
+ * @param paints - Array of paint objects to serialize
+ * @returns Human-readable string describing the fills (e.g., "#FF5733", "linear gradient")
  */
 function serializeFillDataDetailed(paints: readonly Paint[]): string {
   if (!paints || paints.length === 0) return 'None';
@@ -517,7 +684,11 @@ function serializeFillDataDetailed(paints: readonly Paint[]): string {
 }
 
 /**
- * Serialize stroke data for detailed comparison
+ * Serializes stroke properties into a human-readable format for detailed change comparison.
+ * Combines stroke color and weight information into descriptive strings.
+ * 
+ * @param node - The scene node to extract stroke data from
+ * @returns Human-readable string describing the stroke (e.g., "#FF5733, 2px" or "None")
  */
 function serializeStrokeDataDetailed(node: SceneNode): string {
   if (!('strokes' in node)) return 'None';
@@ -532,7 +703,11 @@ function serializeStrokeDataDetailed(node: SceneNode): string {
 }
 
 /**
- * Serialize corner radius for detailed comparison
+ * Serializes corner radius properties into a human-readable format for detailed change comparison.
+ * Handles both uniform and mixed corner radius values with appropriate formatting.
+ * 
+ * @param node - The scene node to extract corner radius data from
+ * @returns Human-readable string describing corner radius (e.g., "8px", "4/8/8/4px", or "None")
  */
 function serializeCornerRadiusDetailed(node: SceneNode): string {
   if (!('cornerRadius' in node)) return 'None';
@@ -556,14 +731,22 @@ function serializeCornerRadiusDetailed(node: SceneNode): string {
 }
 
 /**
- * Serialize size data for detailed comparison
+ * Serializes node dimensions into a human-readable format for detailed change comparison.
+ * Formats width and height values with pixel units for clear presentation.
+ * 
+ * @param node - The scene node to extract size data from
+ * @returns Human-readable string describing dimensions (e.g., "320×240px")
  */
 function serializeSizeDataDetailed(node: SceneNode): string {
   return `${Math.round(node.width)}×${Math.round(node.height)}px`;
 }
 
 /**
- * Serialize effects for detailed comparison
+ * Serializes visual effects into a human-readable format for detailed change comparison.
+ * Converts shadow and blur effects into descriptive strings with color and measurement details.
+ * 
+ * @param effects - Array of effect objects to serialize
+ * @returns Human-readable string describing effects (e.g., "Drop Shadow: #000000, blur 4px" or "None")
  */
 function serializeEffectsDataDetailed(effects: readonly Effect[]): string {
   if (!effects || effects.length === 0) return 'None';
@@ -582,7 +765,11 @@ function serializeEffectsDataDetailed(effects: readonly Effect[]): string {
 }
 
 /**
- * Serialize typography data for detailed comparison
+ * Serializes typography properties into a human-readable format for detailed change comparison.
+ * Extracts font family and size information from text nodes for clear presentation.
+ * 
+ * @param node - The scene node to extract typography data from
+ * @returns Human-readable string describing typography (e.g., "Inter, 16px" or "None" for non-text nodes)
  */
 function serializeTypographyDataDetailed(node: SceneNode): string {
   if (node.type !== 'TEXT') return 'None';
@@ -595,7 +782,12 @@ function serializeTypographyDataDetailed(node: SceneNode): string {
 }
 
 /**
- * Compare property values and create detailed change description
+ * Analyzes differences between two design system elements and creates detailed change descriptions.
+ * Compares various properties like fills, strokes, effects, typography, and generates human-readable change info.
+ * 
+ * @param previous - The previous state of the element
+ * @param current - The current state of the element  
+ * @returns Array of detailed property changes with before/after values
  */
 function analyzePropertyChanges(previous: DesignSystemElement, current: DesignSystemElement): PropertyChangeInfo[] {
   const changes: PropertyChangeInfo[] = [];
@@ -681,7 +873,11 @@ function analyzePropertyChanges(previous: DesignSystemElement, current: DesignSy
 }
 
 /**
- * Create a summary of changes for display
+ * Creates a concise summary of property changes for display purposes.
+ * Formats multiple changes into a readable summary string with appropriate truncation.
+ * 
+ * @param changes - Array of property changes to summarize
+ * @returns Formatted summary string describing the changes
  */
 function createChangesSummary(changes: PropertyChangeInfo[]): string {
   if (changes.length === 0) return 'No specific changes detected';
@@ -696,7 +892,11 @@ function createChangesSummary(changes: PropertyChangeInfo[]): string {
 }
 
 /**
- * Recursively traverse all nested children to collect their essential properties
+ * Recursively traverses a node hierarchy to collect essential properties from all nested children.
+ * Gathers visual and structural properties that are important for change detection and comparison.
+ * 
+ * @param node - The root scene node to start traversing from
+ * @returns Array of property objects representing the node and all its children
  */
 function traverseNodeProperties(node: SceneNode): Record<string, unknown>[] {
   const nodeData: Record<string, unknown> = {
@@ -736,7 +936,11 @@ function traverseNodeProperties(node: SceneNode): Record<string, unknown>[] {
 }
 
 /**
- * Calculate comprehensive structure hash including all nested layers
+ * Calculates a comprehensive hash representing the structural hierarchy of a node and all its children.
+ * Used to detect structural changes like adding, removing, or rearranging nested elements.
+ * 
+ * @param node - The scene node to calculate structure hash for
+ * @returns Hash string representing the complete structural hierarchy, or empty string if no children
  */
 function calculateStructureHash(node: SceneNode): string {
   const hasChildren = 'children' in node && node.children.length > 0;
@@ -749,7 +953,11 @@ function calculateStructureHash(node: SceneNode): string {
 }
 
 /**
- * Calculate deep content hash for all nested layers' visual properties
+ * Calculates a hash representing the visual content of a node and all its nested children.
+ * Focuses on visual properties like fills, strokes, typography that commonly change in design systems.
+ * 
+ * @param node - The scene node to calculate content hash for
+ * @returns Hash string representing the visual content of the entire node hierarchy
  */
 function calculateNestedContentHash(node: SceneNode): string {
   const allNestedData = traverseNodeProperties(node);
@@ -770,7 +978,11 @@ function calculateNestedContentHash(node: SceneNode): string {
 }
 
 /**
- * Serialize scene node properties with detailed data collection
+ * Serializes comprehensive properties of a scene node for tracking and comparison.
+ * Extracts visual, structural, and behavioral properties into hashes and detailed data formats.
+ * 
+ * @param sceneNode - The scene node to serialize properties from
+ * @returns Promise resolving to partial design system element with serialized properties
  */
 async function serializeSceneNodeProperties(sceneNode: SceneNode): Promise<Partial<DesignSystemElement>> {
   const baseProperties: Partial<DesignSystemElement> = {
@@ -801,7 +1013,11 @@ async function serializeSceneNodeProperties(sceneNode: SceneNode): Promise<Parti
 }
 
 /**
- * Serialize base style properties
+ * Serializes properties from Figma style objects (paint, text, effect styles) for tracking.
+ * Extracts relevant style properties and converts them into trackable hash formats.
+ * 
+ * @param style - The base style object to serialize (paint, text, or effect style)
+ * @returns Partial design system element with style-specific properties
  */
 function serializeBaseStyleProperties(style: BaseStyle): Partial<DesignSystemElement> {
   const properties: Partial<DesignSystemElement> = {};
@@ -833,7 +1049,10 @@ function serializeBaseStyleProperties(style: BaseStyle): Partial<DesignSystemEle
 // ======================== COLLECTION FUNCTIONS ========================
 
 /**
- * Collect all components from the document
+ * Collects all component nodes from the current Figma document.
+ * Loads all pages first to ensure comprehensive component discovery across the entire document.
+ * 
+ * @returns Promise resolving to array of serialized component elements
  */
 async function collectComponents(): Promise<DesignSystemElement[]> {
   const components: DesignSystemElement[] = [];
@@ -860,7 +1079,10 @@ async function collectComponents(): Promise<DesignSystemElement[]> {
 }
 
 /**
- * Collect all component sets from the document
+ * Collects all component set nodes from the current Figma document.
+ * Component sets contain multiple component variants and are tracked separately.
+ * 
+ * @returns Promise resolving to array of serialized component set elements
  */
 async function collectComponentSets(): Promise<DesignSystemElement[]> {
   const componentSets: DesignSystemElement[] = [];
@@ -886,7 +1108,10 @@ async function collectComponentSets(): Promise<DesignSystemElement[]> {
 }
 
 /**
- * Collect all styles from the document
+ * Collects all style definitions from the current Figma document.
+ * Includes text styles, paint styles, and effect styles for comprehensive design system tracking.
+ * 
+ * @returns Promise resolving to array of serialized style elements
  */
 async function collectStyles(): Promise<DesignSystemElement[]> {
   const styles: DesignSystemElement[] = [];
@@ -937,7 +1162,10 @@ async function collectStyles(): Promise<DesignSystemElement[]> {
 }
 
 /**
- * Collect all variables from the document
+ * Collects all design variables and variable collections from the current Figma document.
+ * Variables are used for design tokens and maintaining consistency across the design system.
+ * 
+ * @returns Promise resolving to array of serialized variable and collection elements
  */
 async function collectVariables(): Promise<DesignSystemElement[]> {
   const variables: DesignSystemElement[] = [];
@@ -979,7 +1207,11 @@ async function collectVariables(): Promise<DesignSystemElement[]> {
 }
 
 /**
- * Collect all design system elements
+ * Collects all design system elements from the current Figma document.
+ * This is the main aggregation function that gathers components, component sets,
+ * styles, and variables into a unified tracking dataset.
+ * 
+ * @returns Promise resolving to comprehensive array of all design system elements
  */
 async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
   const elements: DesignSystemElement[] = [];
@@ -1003,7 +1235,12 @@ async function collectDesignSystemElements(): Promise<DesignSystemElement[]> {
 // ======================== COMPARISON FUNCTIONS ========================
 
 /**
- * Filter out component set changes when their child components are also changed
+ * Filters out redundant component set changes when their child components are also modified.
+ * Prevents duplicate notifications by removing component set changes if individual components within 
+ * the set are already being tracked as changed.
+ * 
+ * @param changes - The changes object containing added, modified, and removed elements
+ * @returns Filtered changes object with redundant component set modifications removed
  */
 function filterRedundantComponentSetChanges(changes: Changes): Changes {
   const modifiedComponentSetIds = new Set<string>();
@@ -1038,7 +1275,11 @@ function filterRedundantComponentSetChanges(changes: Changes): Changes {
 }
 
 /**
- * Update component display names to show "Set - Component" format when applicable
+ * Updates component display names to show "Set - Component" format for better clarity.
+ * Enhances readability by prefixing component names with their parent component set name.
+ * 
+ * @param changes - The changes object containing added, modified, and removed elements
+ * @returns Changes object with updated component display names in "Set - Component" format
  */
 function updateComponentDisplayNames(changes: Changes): Changes {
   const updatedModified = changes.modified.map(element => {
@@ -1081,7 +1322,12 @@ function updateComponentDisplayNames(changes: Changes): Changes {
 }
 
 /**
- * Compare two arrays of elements and return changes with detailed analysis
+ * Compares two arrays of design system elements and identifies all changes with detailed analysis.
+ * Detects added, removed, and modified elements, providing comprehensive change descriptions.
+ * 
+ * @param previous - Array of previously tracked design system elements
+ * @param current - Array of current design system elements
+ * @returns Changes object categorizing all detected modifications with detailed analysis
  */
 function compareElements(previous: DesignSystemElement[], current: DesignSystemElement[]): Changes {
   const changes: Changes = { added: [], modified: [], removed: [] };
@@ -1125,7 +1371,12 @@ function compareElements(previous: DesignSystemElement[], current: DesignSystemE
 }
 
 /**
- * Check if an element has changed by comparing hashes including nested content
+ * Determines if a design system element has changed by comparing its hash values
+ * and metadata. Uses comprehensive hash comparison across all trackable properties.
+ * 
+ * @param previous - The previously stored element state
+ * @param current - The current element state
+ * @returns True if any changes are detected, false otherwise
  */
 function hasElementChanged(previous: DesignSystemElement, current: DesignSystemElement): boolean {
   const hashFields = [
@@ -1145,7 +1396,8 @@ function hasElementChanged(previous: DesignSystemElement, current: DesignSystemE
 // ======================== MAIN PLUGIN FUNCTIONS ========================
 
 /**
- * Initialize plugin
+ * Initializes the Figma plugin by setting up the UI and starting the tracking system.
+ * Automatically begins tracking initialization and handles any initialization errors.
  */
 function initializePlugin(): void {
   figma.showUI(__html__, { width: 400, height: 600 });
@@ -1161,7 +1413,10 @@ function initializePlugin(): void {
 }
 
 /**
- * Initialize tracking
+ * Initializes the design system tracking by collecting current elements and comparing
+ * with previously stored data. Sets up initial tracking state or detects existing changes.
+ * 
+ * @throws Error if tracking initialization fails
  */
 async function initializeTracking(): Promise<void> {
   try {
@@ -1169,6 +1424,7 @@ async function initializeTracking(): Promise<void> {
     const storedData = getStoredTrackingData();
     
     if (!storedData) {
+      // First-time initialization - store current state
       const initialData: TrackingData = {
         timestamp: Date.now(),
         elements: currentElements
@@ -1180,6 +1436,7 @@ async function initializeTracking(): Promise<void> {
         count: currentElements.length
       });
     } else {
+      // Compare current state with stored data
       const changes = compareElements(storedData.elements, currentElements);
       const hasChanges = changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0;
       
@@ -1203,7 +1460,11 @@ async function initializeTracking(): Promise<void> {
 }
 
 /**
- * Update tracking data
+ * Updates the stored tracking data with the current state of design system elements.
+ * Creates a new snapshot of all tracked elements and stores it persistently.
+ * 
+ * @param notifyUI - Whether to send notification message to UI after update
+ * @throws Error if tracking data update fails
  */
 async function updateTrackingData(notifyUI: boolean = true): Promise<void> {
   try {
@@ -1229,7 +1490,10 @@ async function updateTrackingData(notifyUI: boolean = true): Promise<void> {
 }
 
 /**
- * Scan and compare for changes
+ * Scans the current design system state and compares it with stored tracking data
+ * to detect any changes. Initiates tracking if no stored data exists.
+ * 
+ * @throws Error if scanning or comparison fails
  */
 async function scanAndCompare(): Promise<void> {
   try {
@@ -1263,7 +1527,11 @@ async function scanAndCompare(): Promise<void> {
 }
 
 /**
- * Format element for display with detailed changes
+ * Formats a design system element for display with detailed change information.
+ * Creates human-readable text with emojis, names, and change descriptions for UI presentation.
+ * 
+ * @param element - The design system element or modified element to format
+ * @returns Formatted string with element details and change descriptions
  */
 function formatElementForDisplay(element: DesignSystemElement | DetailedModifiedElement): string {
   const typeEmojis = {
@@ -1300,7 +1568,12 @@ function formatElementForDisplay(element: DesignSystemElement | DetailedModified
 }
 
 /**
- * Add changes to Figma page
+ * Creates a visual changelog entry in Figma by adding changes to a dedicated Logify page.
+ * Generates formatted frames with sections for added, modified, and removed elements,
+ * including detailed change descriptions and optional user comments.
+ * 
+ * @param changes - The changes object containing all detected modifications
+ * @throws Error if fonts cannot be loaded or Figma operations fail
  */
 async function addToFigma(changes: Changes): Promise<void> {
   try {
@@ -1484,6 +1757,14 @@ async function addToFigma(changes: Changes): Promise<void> {
   }
 }
 
+/**
+ * Wraps long text by breaking it into lines that don't exceed the specified length.
+ * Preserves word boundaries and avoids breaking words in the middle.
+ * 
+ * @param text - The text to wrap
+ * @param maxLength - Maximum characters per line
+ * @returns Wrapped text with line breaks
+ */
 function wrapText(text: string, maxLength: number): string {
   const words = text.split(' ');
   let result = '';
@@ -1497,14 +1778,22 @@ function wrapText(text: string, maxLength: number): string {
     line += word + ' ';
   }
 
-  result += line.trimEnd(); // Последняя строка
+  result += line.trimEnd();
   return result;
 }
 
 // ======================== MESSAGE HANDLER ========================
 
 /**
- * Handle UI messages
+ * Handles messages from the plugin UI and dispatches them to appropriate handlers.
+ * Provides comprehensive error handling and user feedback for all operations.
+ * 
+ * Supported message types:
+ * - initialize: Set up initial tracking
+ * - refresh: Scan for changes
+ * - addToFigma: Create changelog entry in Figma
+ * - skipVersion: Skip current version tracking
+ * - viewRecords: Retrieve stored tracking data
  */
 figma.ui.onmessage = async (msg: PluginMessage) => {
   try {
