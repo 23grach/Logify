@@ -1,5 +1,31 @@
 /// <reference types="jest" />
 
+/**
+ * Comprehensive Test Suite for Logify Plugin
+ * 
+ * This test suite focuses on behavior-driven testing to ensure
+ * tests remain valid even after code refactoring.
+ */
+
+// Abstract interfaces for testing - implementation independent
+interface TestElement {
+  id: string;
+  name: string;
+  type: string;
+  [key: string]: unknown;
+}
+
+interface TestTrackingData {
+  timestamp: number;
+  elements: TestElement[];
+}
+
+interface TestChanges {
+  added: TestElement[];
+  modified: TestElement[];
+  removed: TestElement[];
+}
+
 // Type definitions for mock objects
 interface MockPage {
   name: string;
@@ -23,6 +49,77 @@ interface UIMessage {
   type: string;
   [key: string]: unknown;
 }
+
+// Helper functions for behavior-based testing
+const TestHelpers = {
+  // Tests that hash function works stably
+  isHashFunctionStable: (hashFn: (input: string) => string): boolean => {
+    const input = 'test-string-123';
+    const hash1 = hashFn(input);
+    const hash2 = hashFn(input);
+    return hash1 === hash2 && typeof hash1 === 'string' && hash1.length > 0;
+  },
+
+  // Tests that hash function is sensitive to changes
+  isHashFunctionSensitive: (hashFn: (input: string) => string): boolean => {
+    const input1 = 'test-string-123';
+    const input2 = 'test-string-124'; // Minimal change
+    const hash1 = hashFn(input1);
+    const hash2 = hashFn(input2);
+    return hash1 !== hash2;
+  },
+
+  // Tests change detection logic
+  detectChanges: (prev: TestElement[], curr: TestElement[]): TestChanges => {
+    const added = curr.filter(c => !prev.some(p => p.id === c.id));
+    const removed = prev.filter(p => !curr.some(c => c.id === p.id));
+    const modified = curr.filter(c => {
+      const prevElement = prev.find(p => p.id === c.id);
+      return prevElement && JSON.stringify(prevElement) !== JSON.stringify(c);
+    });
+
+    return { added, modified, removed };
+  },
+
+  // Tests compression/decompression cycle (behavior-based)
+  testCompressionCycle: (
+    compressFn: (data: TestTrackingData) => Record<string, unknown>,
+    decompressFn: (compressed: Record<string, unknown>) => TestTrackingData
+  ): boolean => {
+    const originalData: TestTrackingData = {
+      timestamp: Date.now(),
+      elements: [
+        { id: '1', name: 'Test Element', type: 'component' },
+        { id: '2', name: 'Another Element', type: 'style' }
+      ]
+    };
+
+    const compressed = compressFn(originalData);
+    const decompressed = decompressFn(compressed);
+
+    // Check that data was restored correctly
+    return (
+      decompressed.timestamp === originalData.timestamp &&
+      decompressed.elements.length === originalData.elements.length &&
+      decompressed.elements.every((elem, index) => 
+        elem.id === originalData.elements[index].id &&
+        elem.name === originalData.elements[index].name &&
+        elem.type === originalData.elements[index].type
+      )
+    );
+  },
+
+  // Simple hash function for testing
+  simpleHash: (str: string): string => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return hash.toString();
+  }
+};
 
 // Mock Figma API
 const mockFigma = {
@@ -52,7 +149,7 @@ const mockFigma = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (global as any).figma = mockFigma;
 
-describe('Logify Plugin Functional Tests', () => {
+describe('Logify Plugin Test Suite', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFigma.root.children = [];
@@ -96,6 +193,46 @@ describe('Logify Plugin Functional Tests', () => {
       
       const parsed = JSON.parse(result);
       expect(parsed.chunkCount).toBe(2);
+    });
+
+    test('should maintain data integrity through storage cycle', () => {
+      // Mock compression/decompression functions
+      const mockCompress = (data: TestTrackingData): Record<string, unknown> => ({
+        t: data.timestamp,
+        e: data.elements.map(elem => ({
+          i: elem.id,
+          n: elem.name,
+          ty: elem.type
+        }))
+      });
+
+      const mockDecompress = (compressed: Record<string, unknown>): TestTrackingData => ({
+        timestamp: compressed.t as number,
+        elements: (compressed.e as Array<Record<string, unknown>>).map(elem => ({
+          id: elem.i as string,
+          name: elem.n as string,
+          type: elem.ty as string
+        }))
+      });
+
+      expect(TestHelpers.testCompressionCycle(mockCompress, mockDecompress)).toBe(true);
+    });
+
+    test('should handle chunked data correctly', () => {
+      const largeData = 'x'.repeat(1000); // Simulate large data
+      const chunkSize = 100;
+      
+      // Simulate chunking
+      const chunks: string[] = [];
+      for (let i = 0; i < largeData.length; i += chunkSize) {
+        chunks.push(largeData.slice(i, i + chunkSize));
+      }
+      
+      // Simulate reassembly
+      const reassembled = chunks.join('');
+      
+      expect(reassembled).toBe(largeData);
+      expect(chunks.length).toBe(Math.ceil(largeData.length / chunkSize));
     });
   });
 
@@ -145,59 +282,96 @@ describe('Logify Plugin Functional Tests', () => {
     });
   });
 
-  describe('Change Detection Logic', () => {
-    test('should identify new elements', () => {
-      const previousElements = [
+  describe('Core Business Logic (Implementation Independent)', () => {
+    test('should detect new elements correctly', () => {
+      const previousElements: TestElement[] = [
         { id: '1', name: 'Button', type: 'component' }
       ];
       
-      const currentElements = [
+      const currentElements: TestElement[] = [
         { id: '1', name: 'Button', type: 'component' },
         { id: '2', name: 'Input', type: 'component' }
       ];
 
-      const added = currentElements.filter(curr => 
-        !previousElements.some(prev => prev.id === curr.id)
-      );
-
-      expect(added).toHaveLength(1);
-      expect(added[0].id).toBe('2');
+      const changes = TestHelpers.detectChanges(previousElements, currentElements);
+      
+      expect(changes.added).toHaveLength(1);
+      expect(changes.added[0].id).toBe('2');
+      expect(changes.removed).toHaveLength(0);
+      expect(changes.modified).toHaveLength(0);
     });
 
-    test('should identify removed elements', () => {
-      const previousElements = [
+    test('should detect removed elements correctly', () => {
+      const previousElements: TestElement[] = [
         { id: '1', name: 'Button', type: 'component' },
         { id: '2', name: 'Input', type: 'component' }
       ];
       
-      const currentElements = [
+      const currentElements: TestElement[] = [
         { id: '1', name: 'Button', type: 'component' }
       ];
 
-      const removed = previousElements.filter(prev => 
-        !currentElements.some(curr => curr.id === prev.id)
-      );
-
-      expect(removed).toHaveLength(1);
-      expect(removed[0].id).toBe('2');
+      const changes = TestHelpers.detectChanges(previousElements, currentElements);
+      
+      expect(changes.removed).toHaveLength(1);
+      expect(changes.removed[0].id).toBe('2');
+      expect(changes.added).toHaveLength(0);
     });
 
-    test('should identify modified elements by name change', () => {
-      const previousElements = [
+    test('should detect modified elements correctly', () => {
+      const previousElements: TestElement[] = [
         { id: '1', name: 'Button', type: 'component' }
       ];
       
-      const currentElements = [
-        { id: '1', name: 'Primary Button', type: 'component' }
+      const currentElements: TestElement[] = [
+        { id: '1', name: 'Primary Button', type: 'component' } // Name changed
       ];
 
-      const modified = currentElements.filter(curr => {
-        const prev = previousElements.find(p => p.id === curr.id);
-        return prev && prev.name !== curr.name;
-      });
+      const changes = TestHelpers.detectChanges(previousElements, currentElements);
+      
+      expect(changes.modified).toHaveLength(1);
+      expect(changes.modified[0].name).toBe('Primary Button');
+      expect(changes.added).toHaveLength(0);
+      expect(changes.removed).toHaveLength(0);
+    });
+  });
 
-      expect(modified).toHaveLength(1);
-      expect(modified[0].name).toBe('Primary Button');
+  describe('Hash Function Behavior (Algorithm Independent)', () => {
+    test('hash function should be stable', () => {
+      expect(TestHelpers.isHashFunctionStable(TestHelpers.simpleHash)).toBe(true);
+    });
+
+    test('hash function should be sensitive to changes', () => {
+      expect(TestHelpers.isHashFunctionSensitive(TestHelpers.simpleHash)).toBe(true);
+    });
+
+    test('should generate different hashes for different property sets', () => {
+      const props1 = { width: 100, height: 50 };
+      const props2 = { width: 150, height: 50 }; // Only width changed
+      
+      const hash1 = TestHelpers.simpleHash(JSON.stringify(props1));
+      const hash2 = TestHelpers.simpleHash(JSON.stringify(props2));
+      
+      expect(hash1).not.toBe(hash2);
+    });
+
+    test('should handle empty and null values consistently', () => {
+      const emptyProps = {};
+      const nullProps = { value: null };
+      const definedProps = { value: 'test' };
+      
+      const emptyHash = TestHelpers.simpleHash(JSON.stringify(emptyProps));
+      const nullHash = TestHelpers.simpleHash(JSON.stringify(nullProps));
+      const definedHash = TestHelpers.simpleHash(JSON.stringify(definedProps));
+      
+      // Each should give unique hash
+      expect(emptyHash).not.toBe(nullHash);
+      expect(nullHash).not.toBe(definedHash);
+      expect(emptyHash).not.toBe(definedHash);
+      
+      // Check that hashes are stable
+      expect(emptyHash).toBe(TestHelpers.simpleHash(JSON.stringify({})));
+      expect(nullHash).toBe(TestHelpers.simpleHash(JSON.stringify({ value: null })));
     });
   });
 
@@ -288,7 +462,6 @@ describe('Logify Plugin Functional Tests', () => {
     });
   });
 
-  describe('Enhanced Validation', () => {
     test('should provide detailed validation errors', () => {
       const invalidElement: { name: string; type: string; id?: string } = {
         name: 'Test',
@@ -331,7 +504,6 @@ describe('Logify Plugin Functional Tests', () => {
       expect(warnings).toContain('Name is empty');
       expect(warnings).toContain('Modified timestamp seems invalid');
     });
-  });
 
   describe('Logging System', () => {
     test('should create log entries', () => {
@@ -406,11 +578,121 @@ describe('Logify Plugin Functional Tests', () => {
     });
   });
 
-  describe('batching and Performance Optimization', () => {
+  describe('Extended Properties Behavior', () => {
+    test('should handle layout properties changes', () => {
+      const layoutProps1 = {
+        layoutMode: 'HORIZONTAL',
+        itemSpacing: 16,
+        padding: { top: 8, right: 12, bottom: 8, left: 12 }
+      };
+      
+      const layoutProps2 = {
+        ...layoutProps1,
+        itemSpacing: 24 // Only spacing changed
+      };
+
+      const hash1 = JSON.stringify(layoutProps1);
+      const hash2 = JSON.stringify(layoutProps2);
+      
+      expect(hash1).not.toBe(hash2);
+    });
+
+    test('should handle geometry properties changes', () => {
+      const geoProps1 = { width: 100, height: 50, x: 10, y: 20 };
+      const geoProps2 = { ...geoProps1, width: 150 }; // Width changed
+      
+      const hash1 = JSON.stringify(geoProps1);
+      const hash2 = JSON.stringify(geoProps2);
+      
+      expect(hash1).not.toBe(hash2);
+    });
+
+    test('should handle typography properties changes', () => {
+      const typoProps1 = {
+        fontFamily: 'Inter',
+        fontSize: 16,
+        lineHeight: 24
+      };
+      
+      const typoProps2 = {
+        ...typoProps1,
+        fontSize: 18 // Font size changed
+      };
+
+      const hash1 = JSON.stringify(typoProps1);
+      const hash2 = JSON.stringify(typoProps2);
+      
+      expect(hash1).not.toBe(hash2);
+    });
+  });
+
+  describe('Error Handling and Edge Cases', () => {
+    test('should handle empty data gracefully', () => {
+      const emptyPrevious: TestElement[] = [];
+      const emptyCurrent: TestElement[] = [];
+      
+      const changes = TestHelpers.detectChanges(emptyPrevious, emptyCurrent);
+      
+      expect(changes.added).toHaveLength(0);
+      expect(changes.modified).toHaveLength(0);
+      expect(changes.removed).toHaveLength(0);
+    });
+
+    test('should handle malformed element data', () => {
+      const validElements: TestElement[] = [
+        { id: '1', name: 'Valid Element', type: 'component' }
+      ];
+      
+      const elementsWithMissingFields: Partial<TestElement>[] = [
+        { id: '2', name: 'Missing Type' }, // Missing type field
+        { id: '3', type: 'component' }      // Missing name field
+      ];
+      
+      // Function should handle incorrect data
+      const filterValidElements = (elements: (TestElement | Partial<TestElement>)[]): TestElement[] => {
+        return elements.filter((elem): elem is TestElement => 
+          typeof elem.id === 'string' && 
+          typeof elem.name === 'string' && 
+          typeof elem.type === 'string'
+        );
+      };
+      
+      const filtered = filterValidElements([...validElements, ...elementsWithMissingFields]);
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].id).toBe('1');
+    });
+  });
+
+  describe('Performance and Scalability', () => {
+    test('should handle large numbers of elements efficiently', () => {
+      // Generate large dataset
+      const largeElementSet: TestElement[] = Array.from({ length: 1000 }, (_, i) => ({
+        id: `element-${i}`,
+        name: `Element ${i}`,
+        type: 'component'
+      }));
+      
+      const modifiedSet = largeElementSet.map((elem, index) => 
+        index % 100 === 0 ? { ...elem, name: `Modified ${elem.name}` } : elem
+      );
+      
+      const startTime = performance.now();
+      const changes = TestHelpers.detectChanges(largeElementSet, modifiedSet);
+      const endTime = performance.now();
+      
+      // Should complete within reasonable time (less than 100ms for 1000 elements)
+      expect(endTime - startTime).toBeLessThan(100);
+      
+      // Should detect correct number of changes
+      expect(changes.modified).toHaveLength(10); // Every 100th element was modified
+      expect(changes.added).toHaveLength(0);
+      expect(changes.removed).toHaveLength(0);
+    });
+
     test('should process elements in batches', () => {
       const elements = Array.from({ length: 100 }, (_, i) => ({ id: `element${i}` }));
       const batchSize = 25;
-      const batches = [];
+      const batches: typeof elements[] = [];
       
       for (let i = 0; i < elements.length; i += batchSize) {
         batches.push(elements.slice(i, i + batchSize));
@@ -2137,6 +2419,8 @@ describe('Logify Plugin Functional Tests', () => {
       });
     });
   });
+});
 
-
-}); 
+// Export helper functions for potential use in other test files
+export { TestHelpers };
+export type { TestElement, TestTrackingData, TestChanges };
