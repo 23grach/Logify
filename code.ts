@@ -444,22 +444,7 @@ function serializeTypographyProperties(node: SceneNode): string {
   return hashObject(typographyData);
 }
 
-/**
- * Serialize component properties
- */
-function serializeComponentProperties(node: ComponentNode | ComponentSetNode): string {
-  const componentData = {
-    description: node.description,
-    documentationLinks: node.documentationLinks,
-    remote: node.remote,
-    key: node.key,
-    ...(node.type === 'COMPONENT' && {
-      variantProperties: (node as ComponentNode).variantProperties,
-    }),
-  };
-  
-  return hashObject(componentData);
-}
+
 
 /**
  * Serialize instance properties
@@ -794,6 +779,7 @@ function serializeBaseStyleProperties(style: BaseStyle): Partial<DesignSystemEle
 async function collectComponents(): Promise<DesignSystemElement[]> {
   const components: DesignSystemElement[] = [];
   
+  await figma.loadAllPagesAsync();
   const documentComponents = figma.root.findAllWithCriteria({ types: ['COMPONENT'] });
   
   for (const component of documentComponents) {
@@ -820,6 +806,7 @@ async function collectComponents(): Promise<DesignSystemElement[]> {
 async function collectComponentSets(): Promise<DesignSystemElement[]> {
   const componentSets: DesignSystemElement[] = [];
   
+  await figma.loadAllPagesAsync();
   const documentComponentSets = figma.root.findAllWithCriteria({ types: ['COMPONENT_SET'] });
   
   for (const componentSet of documentComponentSets) {
