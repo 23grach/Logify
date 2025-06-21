@@ -1,6 +1,6 @@
-![thumbnail](assets/thumbnail.png)
+# Keep your design system consistent — and versioned
 
-# Keep your design system consistent — and versioned.
+![thumbnail](assets/thumbnail.png)
 
 This plugin helps you track changes to local styles and components in your Figma file. Whether you're updating colors, tweaking typography, or refactoring components, it captures the differences between versions and presents them in a clean, structured changelog — directly on the canvas.
 
